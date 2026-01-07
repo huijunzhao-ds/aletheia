@@ -5,44 +5,62 @@ A modern research interface separated into a React frontend and a Python backend
 
 ## Prerequisites
 
-- **Python 3.9+**
+- **Python 3.10+** (managed via uv)
 - **Node.js** (for frontend development)
-- **Google Gemini API Key** (for real agent logic)
+- **Google Gemini API Key** (set in `.env` as `GOOGLE_API_KEY`)
+- **uv**: [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
 
-## 1. Backend Setup (Python)
+## 1. Environment Setup
 
-The backend is built with FastAPI and is designed to act as a bridge for your AI agent.
+Create a `.env` file in the **root directory** of the project (`aletheia/.env`) with the following content:
+
+```env
+GOOGLE_API_KEY="your-google-gemini-api-key"
+```
+
+## 2. Backend Setup (Python)
+
+The backend is built with FastAPI and Google's Agent Development Kit (ADK). It is managed using `uv`.
 
 ```bash
-# Install dependencies
-pip install fastapi uvicorn pydantic
+# 1. Create virtual environment
+uv venv .venv
 
-# (Optional) If using the Google GenAI SDK
-# pip install -U google-genai
+# 2. Activate virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Run the server
-python main.py
+# 3. Install dependencies
+uv pip install -r requirements.txt
+
+# 4. Run the server
+uvicorn main:app --reload --port 8000
 ```
 The backend will start at `http://localhost:8000`. It includes:
-- CORS support for the frontend.
-- A static file server at `/files` for your generated MP3, MP4, and PPTX assets.
+- **Agent Endpoint**: `POST /api/research` handling the ReAct agent logic.
+- **Static Files**: Serves generated audio/video/slides from `/static` at `http://localhost:8000/static`.
 
-## 2. Frontend Setup
+## 3. Frontend Setup
 
-The frontend is a React application utilizing Tailwind CSS and esm.sh for dependencies.
+The frontend is a React application built with Vite.
 
-1. Open `index.html` in your browser (if using a local live server).
-2. The UI will automatically try to connect to the backend at `localhost:8000/api/research`.
+```bash
+# 1. Install dependencies
+npm install
 
-## 3. Integration Details
+# 2. Run the development server
+npm run dev
+```
 
-- **Port**: The frontend expects the backend on port `8000`.
-- **Payload**:
-  - `POST /api/research`
-  - Body: `{ "query": "string", "mode": "Quick Search" | "Deep Research" }`
-- **Response**:
-  - `{ "content": "markdown_string", "files": [{ "path": "url", "type": "mp3|mp4|pptx", "name": "string" }] }`
+Open the URL shown in the terminal (usually `http://localhost:5173`) to interact with Aletheia.
 
-## 4. Media Storage
+## 4. Architecture
 
-Place any generated files in the `output_files/` folder on your backend. They will be served at `http://localhost:8000/files/yourfile.ext`.
+- **`main.py`**: FastAPI entry point. It wraps the `root_agent` from `app/agent.py`.
+- **`app/`**: Contains the ADK agent logic, tools, and multimodal generation code (merged from `deep-search`).
+- **`static/`**: Stores generated files (audio, video, slides).
+- **Frontend**: React + Vite + Tailwind CSS.
+
+## 5. Troubleshooting
+
+- **CORS**: Ensure the frontend URL is allowed in `main.py`'s `CORSMiddleware`.
+- **API Key**: If the agent fails, check that `GOOGLE_API_KEY` is correctly set in `.env`.
