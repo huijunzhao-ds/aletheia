@@ -1,0 +1,7 @@
+{
+  "name": "Multimedia Research Assistant",
+  "description": "A sophisticated academic research interface with text chat, audio/video generation, and slide presentation capabilities.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
