@@ -40,26 +40,6 @@ app = FastAPI()
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Mount the built frontend (Vite's default output is 'dist')
-# Note: In the Dockerfile, we will build the React app and place it in the 'dist' folder
-if os.path.exists("dist"):
-    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-    
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        # Prevent intercepting API routes
-        if full_path.startswith("api/") or full_path.startswith("static/"):
-            raise HTTPException(status_code=404)
-        
-        # Check if file exists in dist
-        path = os.path.join("dist", full_path)
-        if os.path.isfile(path):
-            from fastapi.responses import FileResponse
-            return FileResponse(path)
-            
-        # Fallback to index.html for SPA routing
-        from fastapi.responses import FileResponse
-        return FileResponse("dist/index.html")
 
 # CORS Middleware setup
 app.add_middleware(
@@ -173,6 +153,27 @@ async def research_endpoint(request: ResearchRequest):
         logger.error(f"Error processing research request: {e}", exc_info=True)
         # Return a 500 with the error message
         raise HTTPException(status_code=500, detail=str(e))
+
+# Mount the built frontend (Vite's default output is 'dist')
+# Note: In the Dockerfile, we will build the React app and place it in the 'dist' folder
+if os.path.exists("dist"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # Prevent intercepting API routes
+        if full_path.startswith("api") or full_path.startswith("static"):
+            raise HTTPException(status_code=404)
+        
+        # Check if file exists in dist
+        path = os.path.join("dist", full_path)
+        if os.path.isfile(path):
+            from fastapi.responses import FileResponse
+            return FileResponse(path)
+            
+        # Fallback to index.html for SPA routing
+        from fastapi.responses import FileResponse
+        return FileResponse("dist/index.html")
 
 if __name__ == "__main__":
     import uvicorn
