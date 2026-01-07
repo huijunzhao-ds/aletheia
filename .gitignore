@@ -60,3 +60,7 @@ static/slides/*
 # OS
 .DS_Store
 Thumbs.db
+
+# GCP
+gcp-sa-key.json
+
