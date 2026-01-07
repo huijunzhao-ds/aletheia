@@ -69,3 +69,12 @@ Open the URL shown in the terminal (usually `http://localhost:5173`) to interact
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
 - [ ] Add memory management and personalization
+
+## 6. How to Contribute
+
+- Fork/clone the repository
+- Create a new branch
+- Make your changes
+- Commit your changes
+- Push your changes
+- Create a pull request
