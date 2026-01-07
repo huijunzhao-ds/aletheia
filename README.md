@@ -60,7 +60,3 @@ Open the URL shown in the terminal (usually `http://localhost:5173`) to interact
 - **`static/`**: Stores generated files (audio, video, slides).
 - **Frontend**: React + Vite + Tailwind CSS.
 
-## 5. Troubleshooting
-
-- **CORS**: Ensure the frontend URL is allowed in `main.py`'s `CORSMiddleware`.
-- **API Key**: If the agent fails, check that `GOOGLE_API_KEY` is correctly set in `.env`.
