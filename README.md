@@ -1,20 +1,48 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
 
-# Run and deploy your AI Studio app
+# Aletheia | Multimedia Research Assistant
 
-This contains everything you need to run your app locally.
+A modern research interface separated into a React frontend and a Python backend (ADK-compatible).
 
-View your app in AI Studio: https://ai.studio/apps/drive/1HW-An0Kdhu-F_0yUNSnKn2nuZ_9XqGop
+## Prerequisites
 
-## Run Locally
+- **Python 3.9+**
+- **Node.js** (for frontend development)
+- **Google Gemini API Key** (for real agent logic)
 
-**Prerequisites:**  Node.js
+## 1. Backend Setup (Python)
 
+The backend is built with FastAPI and is designed to act as a bridge for your AI agent.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+# Install dependencies
+pip install fastapi uvicorn pydantic
+
+# (Optional) If using the Google GenAI SDK
+# pip install -U google-genai
+
+# Run the server
+python main.py
+```
+The backend will start at `http://localhost:8000`. It includes:
+- CORS support for the frontend.
+- A static file server at `/files` for your generated MP3, MP4, and PPTX assets.
+
+## 2. Frontend Setup
+
+The frontend is a React application utilizing Tailwind CSS and esm.sh for dependencies.
+
+1. Open `index.html` in your browser (if using a local live server).
+2. The UI will automatically try to connect to the backend at `localhost:8000/api/research`.
+
+## 3. Integration Details
+
+- **Port**: The frontend expects the backend on port `8000`.
+- **Payload**:
+  - `POST /api/research`
+  - Body: `{ "query": "string", "mode": "Quick Search" | "Deep Research" }`
+- **Response**:
+  - `{ "content": "markdown_string", "files": [{ "path": "url", "type": "mp3|mp4|pptx", "name": "string" }] }`
+
+## 4. Media Storage
+
+Place any generated files in the `output_files/` folder on your backend. They will be served at `http://localhost:8000/files/yourfile.ext`.

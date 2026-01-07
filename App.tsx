@@ -47,18 +47,23 @@ const App: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`Agent error: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown backend error' }));
+        throw new Error(errorData.detail || `Agent error: ${response.statusText}`);
       }
 
       const data = await response.json();
       
-      // The backend should return { content: string, files: GeneratedFile[] }
       const assistantMessage: Message = {
         id: uuidv4(),
         role: 'assistant',
-        content: data.content || "I've completed my analysis.",
+        content: data.content || "Research synthesis complete.",
         timestamp: new Date(),
-        files: data.files || [],
+        // Map backend response files to ensure correct type matching
+        files: data.files?.map((f: any) => ({
+          path: f.path,
+          type: f.type as any,
+          name: f.name
+        })) || [],
       };
 
       setMessages(prev => [...prev, assistantMessage]);
@@ -67,7 +72,7 @@ const App: React.FC = () => {
       const errorMessage: Message = {
         id: uuidv4(),
         role: 'assistant',
-        content: 'I encountered an error connecting to my core processing unit on port 8000. Please ensure your Python backend is running and CORS is enabled.',
+        content: `Connection Error: ${error instanceof Error ? error.message : 'The Python backend on port 8000 is unreachable.'} Please check main.py and CORS settings.`,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, errorMessage]);
