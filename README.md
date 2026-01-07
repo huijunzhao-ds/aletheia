@@ -60,3 +60,12 @@ Open the URL shown in the terminal (usually `http://localhost:5173`) to interact
 - **`static/`**: Stores generated files (audio, video, slides).
 - **Frontend**: React + Vite + Tailwind CSS.
 
+## 5. TO-DOs
+
+- [ ] Deploy to cloud (Vertex AI)
+- [ ] Update UI/UX
+- [ ] Add user login and authentication
+- [ ] Test and improve audio features
+- [ ] Test and improve presentation features
+- [ ] Test and improve video features
+- [ ] Add memory management and personalization
