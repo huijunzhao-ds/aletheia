@@ -35,7 +35,7 @@ const App: React.FC = () => {
 
     try {
       // Connect to your local Python backend
-      const response = await fetch('http://localhost:8000/api/research', {
+      const response = await fetch('/api/research', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -52,7 +52,7 @@ const App: React.FC = () => {
       }
 
       const data = await response.json();
-      
+
       const assistantMessage: Message = {
         id: uuidv4(),
         role: 'assistant',
@@ -84,16 +84,16 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
-      <Sidebar 
-        isOpen={isSidebarOpen} 
+      <Sidebar
+        isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         currentMode={mode}
         onModeChange={setMode}
         messages={messages}
       />
       <main className="flex-1 flex flex-col relative h-full">
-        <ChatArea 
-          messages={messages} 
+        <ChatArea
+          messages={messages}
           onSendMessage={handleSendMessage}
           isProcessing={isProcessing}
           currentStatus={currentStatus}
