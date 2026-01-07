@@ -16,12 +16,17 @@ from app.tools import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Fallback for API Key naming
+api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+if not api_key:
+    logger.warning("No Gemini API key found in environment variables (GOOGLE_API_KEY or GEMINI_API_KEY)")
+
 # Specialized Sub-Agents
 
 # 1. Search Specialist (Handles both web and academic research)
 search_agent = Agent(
     name="search_specialist",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GOOGLE_API_KEY")),
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are a Search Specialist. 
     Use `web_search` for general information and current events.
     Use `search_arxiv` for scientific papers and academic research.
@@ -32,7 +37,7 @@ search_agent = Agent(
 # 2. Audio Content Creator
 audio_agent = Agent(
     name="audio_specialist",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GOOGLE_API_KEY")),
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are an Audio Content Creator.
     Use `generate_audio_summary` to create a spoken summary of the provided text.
     Return the path to the generated MP3 file.""",
@@ -42,7 +47,7 @@ audio_agent = Agent(
 # 3. Presentation Designer
 presentation_agent = Agent(
     name="presentation_specialist",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GOOGLE_API_KEY")),
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are a Presentation Designer.
     Use `generate_presentation_file` to create a slide deck from the provided content.
     Return the path to the generated PPTX file.""",
@@ -52,7 +57,7 @@ presentation_agent = Agent(
 # 4. Video Producer
 video_agent = Agent(
     name="video_specialist",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GOOGLE_API_KEY")),
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are a Video Producer.
     Use `generate_video_lecture_file` to create a narrated video lecture.
     Return the path to the generated MP4 file.""",
@@ -62,7 +67,7 @@ video_agent = Agent(
 # Root Router Agent
 root_agent = Agent(
     name="aletheia_router",
-    model=Gemini(model="gemini-2.5-flash", api_key=os.getenv("GOOGLE_API_KEY")),
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are the Main Coordinator of Aletheia, a multimedia research assistant.
     Your job is to understand the user's request and delegate to the appropriate specialist.
     
