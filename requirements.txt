@@ -12,3 +12,4 @@ moviepy
 fastapi
 uvicorn
 python-dotenv
+firebase-admin

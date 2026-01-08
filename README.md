@@ -32,7 +32,7 @@ uv venv .venv
 # 2. Activate virtual environment
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install dependencies - only need to run once
 uv pip install -r requirements.txt
 
 # 4. Run the server
@@ -47,7 +47,7 @@ The backend will start at `http://localhost:8000`. It includes:
 The frontend is a React application built with Vite.
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies - only need to run once
 npm install
 
 # 2. Run the development server
@@ -69,9 +69,24 @@ Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Act
 ### GitHub Secrets
 Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
 - `GCP_SA_KEY`: The JSON key of your Service Account.
-- `GOOGLE_API_KEY`: Your Gemini API Key (needed for the agent to run in the cloud).
+- `VITE_FIREBASE_API_KEY`: From Firebase Console.
+- `VITE_FIREBASE_AUTH_DOMAIN`: From Firebase Console.
+- `VITE_FIREBASE_PROJECT_ID`: From Firebase Console.
 
-Every time the branch `feature/cloud_deploy` is updated, GitHub Actions will deploy the latest version to Cloud Run automatically. Suggested to test locally before merging to `feature/cloud_deploy`.
+### 3. Authentication Setup (Firebase)
+1. Go to [Firebase Console](https://console.firebase.google.com/) and create a new project.
+2. Enable **Authentication** and turn on the **Google** sign-in provider.
+3. Register a Web App to get your `firebaseConfig` keys.
+4. In your `.env` file, add:
+   ```env
+   VITE_FIREBASE_API_KEY="AIza..."
+   VITE_FIREBASE_AUTH_DOMAIN="your-app.firebaseapp.com"
+   VITE_FIREBASE_PROJECT_ID="your-app"
+   VITE_FIREBASE_STORAGE_BUCKET="your-app.appspot.com"
+   VITE_FIREBASE_MESSAGING_SENDER_ID="..."
+   VITE_FIREBASE_APP_ID="..."
+   ENV="development"
+   ```
 
 ### Manual Deployment (via CLI)
 If you prefer to deploy manually:
@@ -97,7 +112,7 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - Commit your changes and push to your branch
     - Merge into `feature/cloud_deploy` first and GitHub Actions will deploy to Cloud Run automatically. If it works as expected, create a pull request and merge into `main`.
 
-## 4. TO-DOs
+## 5. TO-DOs
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [ ] Add user login and authentication (WIP)
