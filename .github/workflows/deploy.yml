@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - main
+      - feature/cloud_deploy
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: aletheia
   REGION: us-central1
 
@@ -32,15 +32,15 @@ jobs:
 
     - name: Build and Push Container
       run: |-
-        docker build -t "us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}" .
-        docker push "us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}"
+        docker build -t "us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}" .
+        docker push "us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}"
 
     - name: Deploy to Cloud Run
       uses: google-github-actions/deploy-cloudrun@v2
       with:
         service: ${{ env.SERVICE_NAME }}
         region: ${{ env.REGION }}
-        image: "us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}"
+        image: "us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}"
         env_vars: |-
           GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY=${{ secrets.GOOGLE_API_KEY || secrets.GEMINI_API_KEY }}
