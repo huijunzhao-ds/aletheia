@@ -116,10 +116,25 @@ async def get_current_user(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Authentication required")
     
     try:
-        token = authorization.split(" ")[1]
+        # Expect header in the form: "Bearer <token>"
+        parts = authorization.strip().split(" ", 1)
+        if len(parts) != 2 or not parts[1]:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization header format. Expected 'Bearer <token>'.",
+            )
+        scheme, token = parts[0], parts[1]
+        if scheme.lower() != "bearer":
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization scheme. Expected 'Bearer'.",
+            )
         # Verify the ID token using Firebase Admin SDK
         decoded_token = firebase_auth.verify_id_token(token)
         return decoded_token.get("uid", "unknown_user")
+    except HTTPException:
+        # Re-raise HTTPExceptions unchanged
+        raise
     except Exception as e:
         logger.error(f"Auth error: {e}")
         if is_dev:
