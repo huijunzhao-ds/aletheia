@@ -92,8 +92,12 @@ const App: React.FC = () => {
         if (data.threads) {
           setThreads(data.threads);
         }
+        // Clear any previous error status related to loading threads
+        setCurrentStatus('');
       } catch (error) {
         console.error("Failed to fetch threads", error);
+        // Inform the user that loading their thread history failed
+        setCurrentStatus('Failed to load your previous threads. Some history may be missing.');
       }
     };
     fetchThreads();
