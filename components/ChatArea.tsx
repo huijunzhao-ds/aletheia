@@ -5,19 +5,22 @@ import { MessageItem } from './MessageItem';
 
 interface ChatAreaProps {
   messages: Message[];
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, files?: File[]) => void;
   isProcessing: boolean;
   currentStatus: string;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ 
-  messages, 
-  onSendMessage, 
+export const ChatArea: React.FC<ChatAreaProps> = ({
+  messages,
+  onSendMessage,
   isProcessing,
-  currentStatus 
+  currentStatus
 }) => {
   const [input, setInput] = useState('');
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -27,22 +30,54 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim() && !isProcessing) {
-      onSendMessage(input);
+    if ((input.trim() || selectedFiles.length > 0) && !isProcessing) {
+      onSendMessage(input, selectedFiles);
       setInput('');
+      setSelectedFiles([]);
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setSelectedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window)) {
+      alert("Speech recognition not supported in this browser.");
+      return;
+    }
+
+    const SpeechRecognition = (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onend = () => setIsRecording(false);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(prev => prev + (prev ? ' ' : '') + transcript);
+    };
+
+    recognition.start();
   };
 
   return (
     <div className="flex flex-col flex-1 h-full max-w-5xl mx-auto w-full">
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto px-4 md:px-8 py-8 space-y-8 scroll-smooth"
       >
         {messages.map((message) => (
           <MessageItem key={message.id} message={message} />
         ))}
-        
+
         {isProcessing && (
           <div className="flex flex-col space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="flex items-start space-x-4">
@@ -68,28 +103,72 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       <div className="p-4 md:p-8 bg-gradient-to-t from-zinc-950 via-zinc-950 to-transparent sticky bottom-0">
-        <form 
-          onSubmit={handleSubmit}
-          className="relative group flex items-center"
-        >
+        {selectedFiles.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2 animate-in slide-in-from-bottom-2">
+            {selectedFiles.map((file, i) => (
+              <div key={i} className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-full px-3 py-1.5 text-xs text-zinc-300">
+                <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                <span className="truncate max-w-[150px]">{file.name}</span>
+                <button onClick={() => removeFile(i)} className="text-zinc-500 hover:text-red-400">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="relative group">
           <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask Aletheia about papers, generate a lecture, or summarize an area..."
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl py-4 pl-6 pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all shadow-xl text-zinc-100 placeholder-zinc-500"
-            disabled={isProcessing}
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            multiple
+            className="hidden"
           />
-          <button
-            type="submit"
-            disabled={isProcessing || !input.trim()}
-            className="absolute right-3 p-2 rounded-xl bg-indigo-600 text-white disabled:bg-zinc-800 disabled:text-zinc-600 transition-all hover:bg-indigo-500"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
-          </button>
-        </form>
+          <div className="absolute left-3 flex items-center h-full z-10">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 text-zinc-500 hover:text-indigo-400 transition-colors"
+              title="Attach files"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+            </button>
+            <button
+              onClick={handleVoiceInput}
+              className={`p-2 transition-colors ${isRecording ? 'text-red-500 animate-pulse' : 'text-zinc-500 hover:text-indigo-400'}`}
+              title="Voice input"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            </button>
+          </div>
+          <form onSubmit={handleSubmit}>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={isRecording ? "Listening..." : "Ask Aletheia about papers, generate a lecture, or summarize an area..."}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl py-4 pl-24 pr-16 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all shadow-xl text-zinc-100 placeholder-zinc-500"
+              disabled={isProcessing}
+            />
+            <button
+              type="submit"
+              disabled={isProcessing || (!input.trim() && selectedFiles.length === 0)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-indigo-600 text-white disabled:bg-zinc-800 disabled:text-zinc-600 transition-all hover:bg-indigo-500"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+            </button>
+          </form>
+        </div>
         <p className="text-center text-[10px] text-zinc-600 mt-3 font-medium uppercase tracking-widest">
           Aletheia Research Agent • Local Service :8000
         </p>

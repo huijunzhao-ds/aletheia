@@ -1,5 +1,8 @@
-
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Message, GeneratedFile } from '../types';
 
 interface MessageItemProps {
@@ -9,30 +12,12 @@ interface MessageItemProps {
 export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
   const isAssistant = message.role === 'assistant';
 
-  // Helper to format citations as badges
-  const renderContentWithCitations = (text: string) => {
-    const parts = text.split(/(\[\d+\])/g);
-    return parts.map((part, i) => {
-      if (part.match(/\[\d+\]/)) {
-        return (
-          <span 
-            key={i} 
-            className="inline-flex items-center justify-center px-1.5 py-0.5 mx-0.5 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 border border-indigo-400/20 rounded cursor-pointer hover:bg-indigo-400/20 transition-colors"
-          >
-            {part.replace(/[\[\]]/g, '')}
-          </span>
-        );
-      }
-      return part;
-    });
-  };
-
   return (
-    <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
-      <div className={`flex items-start max-w-[85%] space-x-4 ${!isAssistant && 'flex-row-reverse space-x-reverse'}`}>
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${
-          isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
-        }`}>
+    <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500 w-full mb-6`}>
+      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${!isAssistant ? 'flex-row-reverse space-x-reverse' : ''}`}>
+        {/* Avatar */}
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
+          }`}>
           {isAssistant ? (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
@@ -44,23 +29,83 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
           )}
         </div>
 
-        <div className={`space-y-4 ${!isAssistant && 'text-right'}`}>
-          <div className={`px-5 py-3 rounded-2xl shadow-sm leading-relaxed text-sm md:text-base border ${
-            isAssistant 
-              ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none' 
-              : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
-          }`}>
-            {isAssistant ? renderContentWithCitations(message.content) : message.content}
+        {/* Message Content Container */}
+        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${!isAssistant ? 'items-end' : 'items-start'}`}>
+          <div className={`px-5 py-4 rounded-2xl shadow-sm leading-relaxed text-[15px] border w-full ${isAssistant
+            ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none'
+            : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
+            }`}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code({ node, inline, className, children, ...props }: any) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <div className="rounded-lg overflow-hidden my-4 border border-zinc-800 shadow-xl text-left">
+                      <div className="bg-zinc-800 px-4 py-1.5 flex justify-between items-center text-[10px] font-mono text-zinc-400">
+                        <span>{match[1].toUpperCase()}</span>
+                        <div className="flex space-x-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                        </div>
+                      </div>
+                      <SyntaxHighlighter
+                        style={vscDarkPlus}
+                        language={match[1]}
+                        PreTag="div"
+                        className="!m-0 !bg-zinc-950 !p-4 !text-sm scrollbar-thin scrollbar-thumb-zinc-800"
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    </div>
+                  ) : (
+                    <code className={`px-1.5 py-0.5 rounded font-mono text-sm ${isAssistant ? 'bg-zinc-800 text-indigo-300' : 'bg-indigo-500 text-white'}`} {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+                p: ({ children }) => <p className="mb-3 last:mb-0 text-left">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1 text-left">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1 text-left">{children}</ol>,
+                li: ({ children }) => <li className="pl-1 text-left">{children}</li>,
+                h1: ({ children }) => <h1 className="text-xl font-bold mb-4 mt-2 text-white border-b border-zinc-800 pb-2 text-left">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-lg font-bold mb-3 mt-4 text-zinc-100 text-left">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 text-zinc-200 text-left">{children}</h3>,
+                blockquote: ({ children }) => (
+                  <blockquote className="border-l-4 border-indigo-500 pl-4 py-1 italic bg-indigo-500/5 rounded-r my-4 text-left">
+                    {children}
+                  </blockquote>
+                ),
+                table: ({ children }) => (
+                  <div className="overflow-x-auto my-4 shadow-lg rounded-lg border border-zinc-800 text-left">
+                    <table className="min-w-full divide-y divide-zinc-800">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead className="bg-zinc-800/50 text-left">{children}</thead>,
+                th: ({ children }) => <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400 uppercase tracking-wider border-r border-zinc-800 last:border-0">{children}</th>,
+                td: ({ children }) => <td className="px-4 py-2 text-sm border-r border-zinc-800 last:border-0 text-left">{children}</td>,
+                tr: ({ children }) => <tr className="divide-x divide-zinc-800 border-b border-zinc-800 last:border-0 hover:bg-zinc-800/30 transition-colors">{children}</tr>,
+                a: ({ node, ...props }) => <a className="text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-400/50" target="_blank" rel="noopener noreferrer" {...props} />
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
 
+          {/* Generated Files */}
           {isAssistant && message.files && message.files.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 mt-4 w-full">
+            <div className="grid grid-cols-1 gap-4 mt-4 w-full max-w-xl">
               {message.files.map((file, idx) => (
                 <MediaRenderer key={idx} file={file} />
               ))}
             </div>
           )}
-          
+
+          {/* Timestamp */}
           <div className="text-[10px] text-zinc-600 font-medium uppercase tracking-tight px-1">
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
@@ -108,9 +153,9 @@ const MediaRenderer: React.FC<{ file: GeneratedFile }> = ({ file }) => {
       );
     case 'pptx':
       return (
-        <a 
-          href={file.path} 
-          download 
+        <a
+          href={file.path}
+          download
           className="group flex items-center p-4 bg-zinc-900 border border-zinc-800 hover:border-indigo-500 rounded-xl transition-all shadow-md animate-in zoom-in-95 duration-300"
         >
           <div className="p-3 bg-amber-500/20 group-hover:bg-amber-500/30 rounded-lg transition-colors mr-4">

@@ -127,24 +127,42 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || !user) return;
+  const handleSendMessage = async (content: string, files: File[] = []) => {
+    if ((!content.trim() && files.length === 0) || !user) return;
 
     // Add current session to threads list if this is the first message
     if (!threads.find(t => t.id === sessionId)) {
-      setThreads(prev => [{ id: sessionId, title: content }, ...prev]);
+      setThreads(prev => [{ id: sessionId, title: content || (files.length > 0 ? `Files: ${files[0].name}...` : "New Research") }, ...prev]);
     }
 
+    // Convert files to base64 for transmission
+    const uploadedFiles = await Promise.all(files.map(async (file) => {
+      return new Promise<{ name: string, mime_type: string, data: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve({
+            name: file.name,
+            mime_type: file.type,
+            data: base64
+          });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }));
+
+    const fileListText = files.length > 0 ? ` [Attached: ${files.map(f => f.name).join(', ')}]` : '';
     const userMessage: Message = {
       id: uuidv4(),
       role: 'user',
-      content,
+      content: content + fileListText,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
     setIsProcessing(true);
-    setCurrentStatus('Aletheia is initiating research protocol...');
+    setCurrentStatus(files.length > 0 ? 'Aletheia is analyzing your documents...' : 'Aletheia is initiating research protocol...');
 
     try {
       // Get the ID token from Firebase (user is guaranteed non-null by the earlier check)
@@ -160,6 +178,7 @@ const App: React.FC = () => {
           query: content,
           mode: mode,
           sessionId: sessionId,
+          files: uploadedFiles
         }),
       });
 

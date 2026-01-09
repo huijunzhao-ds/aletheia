@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
+import base64
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,10 +73,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class UploadedFile(BaseModel):
+    name: str
+    mime_type: str
+    data: str  # Base64 encoded data
+
 class ResearchRequest(BaseModel):
     query: str
     mode: str = "quick"
     sessionId: str = None
+    files: List[UploadedFile] = []
 
 class FileItem(BaseModel):
     path: str
@@ -193,7 +200,17 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             logger.exception(f"Error setting session title for session: {session_id}")
 
         # Construct content object
-        content = types.Content(parts=[types.Part(text=request.query)])
+        parts = [types.Part(text=request.query)]
+        for f in request.files:
+            try:
+                # Decode base64 to bytes
+                file_bytes = base64.b64decode(f.data)
+                parts.append(types.Part(inline_data=types.Blob(mime_type=f.mime_type, data=file_bytes)))
+                logger.info(f"Added file to request: {f.name} ({f.mime_type})")
+            except Exception as e:
+                logger.error(f"Failed to process file {f.name}: {e}")
+                
+        content = types.Content(parts=parts)
 
         # Execute runner and consume generator
         async for event in runner.run_async(
