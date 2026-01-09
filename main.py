@@ -351,7 +351,6 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
         
         history = []
         for event in session.events:
-            role = "assistant"
             # Attempt to determine role and content
             text = ""
             if hasattr(event, 'content') and hasattr(event.content, 'parts'):
