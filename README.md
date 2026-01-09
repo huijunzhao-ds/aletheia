@@ -80,7 +80,7 @@ Add the following secrets to your GitHub repository (Settings > Secrets and vari
 ### Authentication & Database Setup (Firebase)
 1. Go to [Firebase Console](https://console.firebase.google.com/) and create a new project.
 2. **Authentication**: Enable the **Google** sign-in provider.
-3. **Firestore Database**: Click "Create Database" and select **Native Mode**. This provides permanent storage for your research history.
+3. **Firestore Database**: Click "Create Database" in **production mode** (Firestore in Native mode, the default). This provides permanent storage for your research history.
 4. **Local Credentials**: For the backend to access Firestore locally, run:
    ```bash
    gcloud auth application-default login
