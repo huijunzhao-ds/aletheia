@@ -138,8 +138,8 @@ async def get_current_user(authorization: str = Header(None)):
     except Exception as e:
         logger.error(f"Auth error: {e}")
         if is_dev:
-             logger.warning("Token verification failed locally. Falling back to dev_user.")
-             return "dev_user"
+            logger.warning("Token verification failed locally. Falling back to dev_user.")
+            return "dev_user"
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 @app.post("/api/research", response_model=ResearchResponse)
