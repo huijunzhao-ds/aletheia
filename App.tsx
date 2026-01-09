@@ -30,13 +30,36 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
 
-  const resetSession = () => {
+  const persistThread = async (id: string, title: string) => {
+    if (!user) {
+      return;
+    }
+
+    try {
+      await fetch('/api/threads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id,
+          title,
+          userId: user.uid,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to persist thread', error);
+    }
+  };
+
+  const resetSession = async () => {
     // If current session has legitimate user messages, save it to threads if not already there
     const hasUserMessages = messages.some(m => m.role === 'user');
     if (hasUserMessages) {
       const firstUserMessage = messages.find(m => m.role === 'user')?.content || "New Research";
       if (!threads.find(t => t.id === sessionId)) {
         setThreads(prev => [{ id: sessionId, title: firstUserMessage }, ...prev]);
+        await persistThread(sessionId, firstUserMessage);
       }
     }
 
