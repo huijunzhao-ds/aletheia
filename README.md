@@ -160,6 +160,7 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
 - [ ] Add proactive agent features
+- [ ] Add personal knowledge and information sources
 - [ ] Add memory management and personalization
 
 
