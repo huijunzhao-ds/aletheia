@@ -269,30 +269,74 @@ async def get_user_threads(user_id: str = Depends(get_current_user)):
     Fetches all research threads (sessions) for the current user.
     """
     try:
-        # If we are using Firestore, we can query it directly
-        from google.cloud import firestore
-        db = firestore.AsyncClient()
-        
-        # This assumes FirestoreSessionService uses a collection named 'sessions'
-        # and stores user_id in the document.
-        # Note: Actual ADK collection/field names might vary.
-        sessions_ref = db.collection("sessions").where("user_id", "==", user_id)
-        docs = await sessions_ref.stream()
-        
         threads = []
-        async for doc in docs:
-            data = doc.to_dict()
-            session_id = data.get("session_id")
-            
-            # Use the 'title' from state if available, otherwise fallback
-            title = data.get("state", {}).get("title", "Untitled Research")
-            
-            threads.append({
-                "id": session_id,
-                "title": title
-            })
-            
-        return {"threads": threads}
+
+        # Prefer using the session_service abstraction if it provides a
+        # way to list sessions for a user. This keeps the endpoint
+        # decoupled from the underlying storage (Firestore, in‑memory, etc.).
+        session_list_fn = getattr(session_service, "list_sessions_for_user", None)
+        if callable(session_list_fn):
+            sessions = await session_list_fn(user_id=user_id, app_name=adk_app.name)
+            for s in sessions or []:
+                # Support both dict-like and object-like session representations.
+                if isinstance(s, dict):
+                    raw_state = s.get("state") or {}
+                    session_id = s.get("session_id") or s.get("id")
+                    title = (
+                        (raw_state.get("title") if isinstance(raw_state, dict) else None)
+                        or s.get("title")
+                        or "Untitled Research"
+                    )
+                else:
+                    raw_state = getattr(s, "state", None) or {}
+                    session_id = getattr(s, "session_id", None) or getattr(s, "id", None)
+                    if isinstance(raw_state, dict):
+                        title = raw_state.get("title") or getattr(s, "title", None) or "Untitled Research"
+                    else:
+                        title = getattr(raw_state, "title", None) or getattr(s, "title", None) or "Untitled Research"
+
+                if not session_id:
+                    continue
+
+                threads.append(
+                    {
+                        "id": session_id,
+                        "title": title,
+                    }
+                )
+
+            return {"threads": threads}
+
+        # Fallback: directly query Firestore if no abstraction is available.
+        try:
+            from google.cloud import firestore
+
+            db = firestore.AsyncClient()
+
+            # This assumes FirestoreSessionService uses a collection named 'sessions'
+            # and stores user_id in the document.
+            # Note: Actual ADK collection/field names might vary.
+            sessions_ref = db.collection("sessions").where("user_id", "==", user_id)
+            docs = await sessions_ref.stream()
+
+            async for doc in docs:
+                data = doc.to_dict()
+                session_id = data.get("session_id")
+
+                # Use the 'title' from state if available, otherwise fallback
+                title = data.get("state", {}).get("title", "Untitled Research")
+
+                threads.append(
+                    {
+                        "id": session_id,
+                        "title": title,
+                    }
+                )
+
+            return {"threads": threads}
+        except Exception as firestore_error:
+            logger.error(f"Error fetching threads from Firestore: {firestore_error}")
+            return {"threads": []}
     except Exception as e:
         logger.error(f"Error fetching threads: {e}")
         # Fallback for InMemory (no persistence anyway)
