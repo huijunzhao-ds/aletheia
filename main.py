@@ -209,7 +209,6 @@ class UploadedFile(BaseModel):
 
 class ResearchRequest(BaseModel):
     query: str
-    mode: str = "quick"
     sessionId: str = None
     files: List[UploadedFile] = []
 
@@ -280,12 +279,8 @@ async def get_current_user(authorization: str = Header(None)):
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get_current_user)):
-    logger.info(f"Received research request from {user_id}: {request.query} (mode: {request.mode})")
+    logger.info(f"Received research request from {user_id}: {request.query}")
     try:
-        # Depending on the mode, we might want to adjust the prompt or agent config,
-        # but for now we pass the query to the root agent.
-        # The deep-search agent is designed to route automatically.
-        
         # Invoke the agent using the ADK Runner
         runner = Runner(app=adk_app, session_service=session_service)
         
@@ -324,8 +319,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                     session_id=session_id, 
                     app_name=adk_app.name,
                     state_update={
-                        "title": request.query[:50] + ("..." if len(request.query) > 50 else ""),
-                        "mode": request.mode
+                        "title": request.query[:50] + ("..." if len(request.query) > 50 else "")
                     }
                 )
         except Exception:
@@ -545,16 +539,11 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
                 "timestamp": event.timestamp
             })
             
-        # Return both messages and the saved mode
         return {
-            "messages": history, 
-            "mode": session.state.get("mode", "quick")
+            "messages": history
         }
     except Exception as e:
         logger.error(f"Error fetching session {session_id}: {e}", exc_info=True)
-        return {"messages": [], "mode": "quick"}
-    except Exception as e:
-        logger.error(f"Error fetching session: {e}")
         return {"messages": []}
 
 # Mount the built frontend (Vite's default output is 'dist')

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
-import { ResearchMode, Message } from './types';
+import { Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from './firebaseConfig';
 import {
@@ -25,7 +25,6 @@ const App: React.FC = () => {
       timestamp: new Date(),
     }
   ]);
-  const [mode, setMode] = useState<ResearchMode>(ResearchMode.QUICK);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
@@ -118,11 +117,6 @@ const App: React.FC = () => {
         })));
         setSessionId(id);
       }
-
-      // Restore the research mode used for this session
-      if (data.mode) {
-        setMode(data.mode as ResearchMode);
-      }
     } catch (error) {
       console.error("Failed to load thread", error);
       setCurrentStatus('Failed to load the selected thread. Please try again.');
@@ -184,7 +178,6 @@ const App: React.FC = () => {
         },
         body: JSON.stringify({
           query: content,
-          mode: mode,
           sessionId: sessionId,
           files: uploadedFiles
         }),
@@ -240,8 +233,6 @@ const App: React.FC = () => {
           <Sidebar
             isOpen={isSidebarOpen}
             onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-            currentMode={mode}
-            onModeChange={setMode}
             messages={messages}
             userName={user.displayName}
             userPhoto={user.photoURL}

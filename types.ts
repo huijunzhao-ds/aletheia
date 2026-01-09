@@ -1,9 +1,4 @@
 
-export enum ResearchMode {
-  QUICK = 'Quick Search',
-  DEEP = 'Deep Research'
-}
-
 export type FileType = 'mp3' | 'mp4' | 'pptx';
 
 export interface GeneratedFile {
@@ -24,7 +19,6 @@ export interface Message {
 
 export interface AppState {
   messages: Message[];
-  currentMode: ResearchMode;
   isSidebarOpen: boolean;
   isProcessing: boolean;
   status: string;
