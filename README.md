@@ -21,7 +21,7 @@ Create a `.env` file in the **root directory** of the project (`aletheia/.env`) 
 GOOGLE_API_KEY="your-google-gemini-api-key"
 ```
 
-### Backend Setup (Python)
+### Backend Setup
 
 The backend is built with FastAPI and Google's Agent Development Kit (ADK). It is managed using `uv`.
 
@@ -69,15 +69,24 @@ Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Act
 ### GitHub Secrets
 Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
 - `GCP_SA_KEY`: The JSON key of your Service Account.
+- `GOOGLE_API_KEY`: Your Gemini API Key.
 - `VITE_FIREBASE_API_KEY`: From Firebase Console.
 - `VITE_FIREBASE_AUTH_DOMAIN`: From Firebase Console.
 - `VITE_FIREBASE_PROJECT_ID`: From Firebase Console.
+- `VITE_FIREBASE_STORAGE_BUCKET`: From Firebase Console.
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`: From Firebase Console.
+- `VITE_FIREBASE_APP_ID`: From Firebase Console.
 
-### 3. Authentication Setup (Firebase)
+### Authentication & Database Setup (Firebase)
 1. Go to [Firebase Console](https://console.firebase.google.com/) and create a new project.
-2. Enable **Authentication** and turn on the **Google** sign-in provider.
-3. Register a Web App to get your `firebaseConfig` keys.
-4. In your `.env` file, add:
+2. **Authentication**: Enable the **Google** sign-in provider.
+3. **Firestore Database**: Click "Create Database" and select **Native Mode**. This provides permanent storage for your research history.
+4. **Local Credentials**: For the backend to access Firestore locally, run:
+   ```bash
+   gcloud auth application-default login
+   ```
+5. Register a Web App to get your `firebaseConfig` keys.
+6. In your `.env` file, add:
    ```env
    VITE_FIREBASE_API_KEY="AIza..."
    VITE_FIREBASE_AUTH_DOMAIN="your-app.firebaseapp.com"
@@ -115,9 +124,9 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 ## 5. TO-DOs
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
-- [ ] Add user login and authentication (WIP)
-- [ ] Update UI/UX
-- [ ] Test and improve chat features
+- [x] Add user login and authentication 
+- [ ] Update UI/UX (WIP)
+- [ ] Test and improve chat features (WIP)
 - [ ] Test and improve audio features
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
