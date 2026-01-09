@@ -58,13 +58,25 @@ Open the URL shown in the terminal (usually `http://localhost:3000`) to interact
 
 ## 2. Deploy to Cloud Run
 
-Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Actions**. The latest version is deployed to `https://aletheia-356306.uc.r.appspot.com/`.
+Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Actions**. The latest version is deployed to `https://aletheia-635800011324.us-central1.run.app/`.
 
 ### Google Cloud Setup
-1. **Enable APIs**: Create a new GCP Project and enable Cloud Run, Artifact Registry, and Cloud Build APIs. Can use CLI: `gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com`
-2. **Artifact Registry**: Create a Docker repository named `aletheia` in `us-central1`. Can use CLI: `gcloud artifacts repositories create aletheia --repository-format=docker --location=us-central1`
-3. **Service Account**: Create a Service Account with `Cloud Run Admin` and `Artifact Registry Writer` roles. Generate a JSON key. Can use CLI: `gcloud iam service-accounts create aletheia --display-name "Aletheia Service Account"`
-4. **Service Account Key**: Generate a JSON key for the Service Account. Can use CLI: `gcloud iam service-accounts keys create aletheia.json --iam-account aletheia@aletheia-356306.iam.gserviceaccount.com`    
+1. **Enable APIs**: Create a new GCP Project and enable Cloud Run, Artifact Registry, and Cloud Build APIs. Can use CLI
+```bash
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+```
+2. **Artifact Registry**: Create a Docker repository named `aletheia` in `us-central1`. Can use CLI
+```bash
+gcloud artifacts repositories create aletheia --repository-format=docker --location=us-central1
+```
+3. **Service Account**: Create a Service Account with `Cloud Run Admin` and `Artifact Registry Writer` roles. Generate a JSON key. Can use CLI
+```bash
+gcloud iam service-accounts create aletheia --display-name "Aletheia Service Account"
+```
+4. **Service Account Key**: Generate a JSON key for the Service Account. Can use CLI
+```bash
+gcloud iam service-accounts keys create aletheia.json --iam-account aletheia@aletheia-356306.iam.gserviceaccount.com
+```
 
 ### GitHub Secrets
 Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
@@ -139,11 +151,15 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
-- [ ] Update UI/UX (WIP)
 - [ ] Test and improve chat features (WIP)
+    - [x] Improve input and output experience
+    - [ ] Add session management and history (WIP)
+    - [ ] Improve agent prompt and logic
+- [ ] Update UI/UX (WIP)
 - [ ] Test and improve audio features
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
+- [ ] Add proactive agent features
 - [ ] Add memory management and personalization
 
 
