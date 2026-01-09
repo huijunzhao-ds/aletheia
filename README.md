@@ -21,7 +21,7 @@ Create a `.env` file in the **root directory** of the project (`aletheia/.env`) 
 GOOGLE_API_KEY="your-google-gemini-api-key"
 ```
 
-### Backend Setup (Python)
+### Backend Setup
 
 The backend is built with FastAPI and Google's Agent Development Kit (ADK). It is managed using `uv`.
 
@@ -32,7 +32,7 @@ uv venv .venv
 # 2. Activate virtual environment
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install dependencies - only need to run once
 uv pip install -r requirements.txt
 
 # 4. Run the server
@@ -47,7 +47,7 @@ The backend will start at `http://localhost:8000`. It includes:
 The frontend is a React application built with Vite.
 
 ```bash
-# 1. Install dependencies
+# 1. Install dependencies - only need to run once
 npm install
 
 # 2. Run the development server
@@ -69,9 +69,47 @@ Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Act
 ### GitHub Secrets
 Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
 - `GCP_SA_KEY`: The JSON key of your Service Account.
-- `GOOGLE_API_KEY`: Your Gemini API Key (needed for the agent to run in the cloud).
+- `GOOGLE_API_KEY`: Your Gemini API Key.
+- `VITE_FIREBASE_API_KEY`: From Firebase Console.
+- `VITE_FIREBASE_AUTH_DOMAIN`: From Firebase Console.
+- `VITE_FIREBASE_PROJECT_ID`: From Firebase Console.
+- `VITE_FIREBASE_STORAGE_BUCKET`: From Firebase Console.
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`: From Firebase Console.
+- `VITE_FIREBASE_APP_ID`: From Firebase Console.
 
-Every time the branch `feature/cloud_deploy` is updated, GitHub Actions will deploy the latest version to Cloud Run automatically. Suggested to test locally before merging to `feature/cloud_deploy`.
+### Authentication & Database Setup (Firebase)
+1. Go to [Firebase Console](https://console.firebase.google.com/) and create a new project.
+2. **Authentication**: Enable the **Google** sign-in provider.
+3. **Firestore Database**: Click "Create Database" in **production mode** (Firestore in Native mode, the default). This provides permanent storage for your research history.
+4. **Local Credentials**: For the backend to access Firestore locally, run:
+   ```bash
+   gcloud auth application-default login
+   ```
+5. Register a Web App to get your `firebaseConfig` keys.
+6. In your `.env` file, add:
+   ```env
+   VITE_FIREBASE_API_KEY="AIza..."
+   VITE_FIREBASE_AUTH_DOMAIN="your-app.firebaseapp.com"
+   VITE_FIREBASE_PROJECT_ID="your-app"
+   VITE_FIREBASE_STORAGE_BUCKET="your-app.appspot.com"
+   VITE_FIREBASE_MESSAGING_SENDER_ID="..."
+   VITE_FIREBASE_APP_ID="..."
+   ENV="development"
+   ```
+7. **Configure Firestore Security Rules**: Restrict read/write access to authenticated users and only to their own data. For example, if you store user-specific session or history documents under a `sessions` collection with a `userId` field equal to the authenticated user's `uid`, you can use rules like:
+   ```txt
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       // Example: user sessions/history stored in /sessions/{sessionId}
+       match /sessions/{sessionId} {
+         allow read, write: if request.auth != null
+           && request.auth.uid == resource.data.userId;
+       }
+     }
+   }
+   ```
+   Apply these rules in the **Firestore -> Rules** tab in the Firebase Console, or via the Firebase CLI if you manage rules as code. Adjust collection names and fields (`sessions`, `userId`) to match your actual data model.
 
 ### Manual Deployment (via CLI)
 If you prefer to deploy manually:
@@ -97,12 +135,12 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - Commit your changes and push to your branch
     - Merge into `feature/cloud_deploy` first and GitHub Actions will deploy to Cloud Run automatically. If it works as expected, create a pull request and merge into `main`.
 
-## 4. TO-DOs
+## 5. TO-DOs
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
-- [ ] Add user login and authentication (WIP)
-- [ ] Update UI/UX
-- [ ] Test and improve chat features
+- [x] Add user login and authentication 
+- [ ] Update UI/UX (WIP)
+- [ ] Test and improve chat features (WIP)
 - [ ] Test and improve audio features
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
