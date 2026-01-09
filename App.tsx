@@ -159,6 +159,9 @@ const App: React.FC = () => {
 
     try {
       // Get the ID token from Firebase
+      if (!user) {
+        throw new Error('User is not authenticated');
+      }
       const token = await user.getIdToken();
 
       const response = await fetch('/api/research', {
