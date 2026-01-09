@@ -137,11 +137,11 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             try:
                 logger.info(f"Initializing session: {session_id}")
                 await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
-            except Exception as e:
-                if "already exists" in str(e).lower():
-                    logger.info("Session already existed in backend, proceeding.")
-                else:
-                    raise e
+            except Exception:
+                logger.exception(f"Error initializing session: {session_id}")
+                raise
+        
+        
         
         # Save the query as the title if this is a fresh session
         try:
