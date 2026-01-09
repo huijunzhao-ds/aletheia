@@ -109,19 +109,27 @@ const App: React.FC = () => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      if (data.messages && data.messages.length > 0) {
+
+      // Load history messages if present
+      if (data.messages) {
         setMessages(data.messages.map((m: any) => ({
           ...m,
           timestamp: new Date(m.timestamp)
         })));
         setSessionId(id);
       }
+
+      // Restore the research mode used for this session
+      if (data.mode) {
+        setMode(data.mode as ResearchMode);
+      }
     } catch (error) {
       console.error("Failed to load thread", error);
       setCurrentStatus('Failed to load the selected thread. Please try again.');
     } finally {
       setIsProcessing(false);
-      if (!currentStatus.includes('Failed')) {
+      // Only clear status if it wasn't an error
+      if (!currentStatus.toLowerCase().includes('failed')) {
         setCurrentStatus('');
       }
     }

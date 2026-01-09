@@ -323,7 +323,10 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                     user_id=user_id, 
                     session_id=session_id, 
                     app_name=adk_app.name,
-                    state_update={"title": request.query[:50] + ("..." if len(request.query) > 50 else "")}
+                    state_update={
+                        "title": request.query[:50] + ("..." if len(request.query) > 50 else ""),
+                        "mode": request.mode
+                    }
                 )
         except Exception:
             logger.exception(f"Error setting session title for session: {session_id}")
@@ -503,54 +506,53 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
     try:
         session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
         if not session:
-            return {"messages": []}
+            return {"messages": [], "mode": "quick"}
         
         history = []
         for event in session.events:
-            # Attempt to determine role and content in a schema-tolerant way
             text = ""
-            # Prefer content.parts[0].text if present and well-formed
+            # ADK Event data extraction
             content = getattr(event, "content", None)
-            if content is not None:
+            if content:
                 parts = getattr(content, "parts", None)
-                if isinstance(parts, (list, tuple)) and len(parts) > 0:
-                    first_part = parts[0]
-                    text = getattr(first_part, "text", "") or ""
-            # Fallbacks: some events may expose text/output directly
-            if not text:
-                direct_text = getattr(event, "text", None)
-                if direct_text:
-                    text = direct_text or ""
-            if not text:
-                output_text = getattr(event, "output", None)
-                if output_text:
-                    text = output_text or ""
+                if parts:
+                    # Collect all text parts
+                    text_parts = [getattr(p, "text", "") for p in parts if getattr(p, "text", "")]
+                    text = "\n".join(text_parts)
             
+            # Fallbacks for text
             if not text:
+                text = getattr(event, "text", "") or getattr(event, "output", "") or ""
+            
+            if not text or not str(text).strip():
                 continue
             
-            # Determine role using explicit event fields when possible
+            # Role detection
             role = getattr(event, "role", None)
             if role not in ("user", "assistant", "system", "tool"):
-                # Try to infer role from event type metadata, if available
-                event_type = getattr(event, "type", None) or getattr(event, "event_type", None) or ""
-                event_type = str(event_type).lower()
-                if any(key in event_type for key in ("user", "input", "request")):
+                event_type = str(getattr(event, "type", "") or getattr(event, "event_type", "")).lower()
+                if any(k in event_type for k in ("user", "input", "request")):
                     role = "user"
-                elif "thought" in text.lower():
-                    # Fallback heuristic for internal reasoning steps
+                elif "thought" in text.lower() or "thinking" in event_type:
                     role = "system"
                 else:
                     role = "assistant"
             
             history.append({
-                "id": str(event.event_id),
+                "id": str(event.id),
                 "role": role,
                 "content": text,
-                "timestamp": event.created_at
+                "timestamp": event.timestamp
             })
             
-        return {"messages": history}
+        # Return both messages and the saved mode
+        return {
+            "messages": history, 
+            "mode": session.state.get("mode", "quick")
+        }
+    except Exception as e:
+        logger.error(f"Error fetching session {session_id}: {e}", exc_info=True)
+        return {"messages": [], "mode": "quick"}
     except Exception as e:
         logger.error(f"Error fetching session: {e}")
         return {"messages": []}
