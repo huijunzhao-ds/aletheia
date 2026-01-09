@@ -162,8 +162,11 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             if existing_session:
                 session_exists = True
                 logger.info(f"Reusing existing session: {session_id}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                f"Error while checking for existing session {session_id} for user {user_id}: {e}",
+                exc_info=True,
+            )
 
         if not session_exists:
             try:
@@ -187,7 +190,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                     state_update={"title": request.query[:50] + ("..." if len(request.query) > 50 else "")}
                 )
         except Exception:
-            pass
+            logger.exception(f"Error setting session title for session: {session_id}")
 
         # Construct content object
         content = types.Content(parts=[types.Part(text=request.query)])
@@ -308,6 +311,13 @@ async def get_user_threads(user_id: str = Depends(get_current_user)):
             return {"threads": threads}
 
         # Fallback: directly query Firestore if no abstraction is available.
+        # NOTE: This implementation makes assumptions about the internal structure
+        # of FirestoreSessionService:
+        # - It assumes sessions are stored in a 'sessions' collection
+        # - It assumes documents have a 'user_id' field for filtering
+        # - It assumes session state is stored in a 'state' field with an optional 'title' subfield
+        # If the actual ADK implementation uses different collection names or field structures,
+        # this fallback may return empty or incorrect results.
         try:
             from google.cloud import firestore
 
@@ -351,23 +361,45 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
         
         history = []
         for event in session.events:
-            # Attempt to determine role and content
+            # Attempt to determine role and content in a schema-tolerant way
             text = ""
-            if hasattr(event, 'content') and hasattr(event.content, 'parts'):
-                text = event.content.parts[0].text or ""
-                # Simple heuristic for role based on event type or content
-                # In ADK, events usually represent steps. We look for 'text' or 'output'
-            elif hasattr(event, 'text'):
-                text = event.text or ""
-            elif hasattr(event, 'output'):
-                text = event.output or ""
+            # Prefer content.parts[0].text if present and well-formed
+            content = getattr(event, "content", None)
+            if content is not None:
+                parts = getattr(content, "parts", None)
+                if isinstance(parts, (list, tuple)) and len(parts) > 0:
+                    first_part = parts[0]
+                    text = getattr(first_part, "text", "") or ""
+            # Fallbacks: some events may expose text/output directly
+            if not text:
+                direct_text = getattr(event, "text", None)
+                if direct_text:
+                    text = direct_text or ""
+            if not text:
+                output_text = getattr(event, "output", None)
+                if output_text:
+                    text = output_text or ""
             
-            if not text: continue
+            if not text:
+                continue
             
-            # Very simple mapping for UI
+            # Determine role using explicit event fields when possible
+            role = getattr(event, "role", None)
+            if role not in ("user", "assistant", "system", "tool"):
+                # Try to infer role from event type metadata, if available
+                event_type = getattr(event, "type", None) or getattr(event, "event_type", None) or ""
+                event_type = str(event_type).lower()
+                if any(key in event_type for key in ("user", "input", "request")):
+                    role = "user"
+                elif "thought" in text.lower():
+                    # Fallback heuristic for internal reasoning steps
+                    role = "system"
+                else:
+                    role = "assistant"
+            
             history.append({
                 "id": str(event.event_id),
-                "role": "assistant" if "Thought" not in text else "system", # simplified
+                "role": role,
                 "content": text,
                 "timestamp": event.created_at
             })

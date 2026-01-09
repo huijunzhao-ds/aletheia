@@ -96,6 +96,20 @@ Add the following secrets to your GitHub repository (Settings > Secrets and vari
    VITE_FIREBASE_APP_ID="..."
    ENV="development"
    ```
+7. **Configure Firestore Security Rules**: Restrict read/write access to authenticated users and only to their own data. For example, if you store user-specific session or history documents under a `sessions` collection with a `userId` field equal to the authenticated user's `uid`, you can use rules like:
+   ```txt
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       // Example: user sessions/history stored in /sessions/{sessionId}
+       match /sessions/{sessionId} {
+         allow read, write: if request.auth != null
+           && request.auth.uid == resource.data.userId;
+       }
+     }
+   }
+   ```
+   Apply these rules in the **Firestore -> Rules** tab in the Firebase Console, or via the Firebase CLI if you manage rules as code. Adjust collection names and fields (`sessions`, `userId`) to match your actual data model.
 
 ### Manual Deployment (via CLI)
 If you prefer to deploy manually:
