@@ -26,10 +26,27 @@ try:
     from google.adk.sessions.firestore_session_service import FirestoreSessionService
     session_service = FirestoreSessionService()
     logger.info("Using Firestore for session storage")
-except ImportError:
-    from google.adk.sessions.in_memory_session_service import InMemorySessionService
-    session_service = InMemorySessionService()
-    logger.info("Using InMemory session storage (Firestore session service not found)")
+except ImportError as e:
+    # Only fall back to in-memory sessions if the Firestore session service module
+    # itself cannot be imported. For other import errors, re-raise to surface
+    # potential misconfigurations (e.g., missing dependencies).
+    missing_module = getattr(e, "name", None)
+    if (
+        missing_module == "google.adk.sessions.firestore_session_service"
+        or "google.adk.sessions.firestore_session_service" in str(e)
+    ):
+        from google.adk.sessions.in_memory_session_service import InMemorySessionService
+        session_service = InMemorySessionService()
+        logger.warning(
+            "Using InMemory session storage (Firestore session service module not found): %s",
+            e,
+        )
+    else:
+        logger.error(
+            "Failed to import FirestoreSessionService due to an unexpected ImportError: %s",
+            e,
+        )
+        raise
 
 # Import the ADK agent app
 try:
