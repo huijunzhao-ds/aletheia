@@ -31,25 +31,11 @@ const App: React.FC = () => {
   const [currentStatus, setCurrentStatus] = useState<string>('');
 
   const persistThread = async (id: string, title: string) => {
-    if (!user) {
-      return;
-    }
-
-    try {
-      await fetch('/api/threads', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id,
-          title,
-          userId: user.uid,
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to persist thread', error);
-    }
+    // NOTE: Thread persistence to the backend is currently disabled because
+    // there is no POST /api/threads endpoint implemented on the server.
+    // This function is kept as a no-op to preserve the existing API and
+    // can be updated once the corresponding backend route is available.
+    return;
   };
 
   const resetSession = async () => {
@@ -132,9 +118,12 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to load thread", error);
+      setCurrentStatus('Failed to load the selected thread. Please try again.');
     } finally {
       setIsProcessing(false);
-      setCurrentStatus('');
+      if (!currentStatus.includes('Failed')) {
+        setCurrentStatus('');
+      }
     }
   };
 
@@ -158,11 +147,8 @@ const App: React.FC = () => {
     setCurrentStatus('Aletheia is initiating research protocol...');
 
     try {
-      // Get the ID token from Firebase
-      if (!user) {
-        throw new Error('User is not authenticated');
-      }
-      const token = await user.getIdToken();
+      // Get the ID token from Firebase (user is guaranteed non-null by the earlier check)
+      const token = await user!.getIdToken();
 
       const response = await fetch('/api/research', {
         method: 'POST',
