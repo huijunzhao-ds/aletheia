@@ -15,11 +15,13 @@ import {
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string>(uuidv4());
+  const [threads, setThreads] = useState<{ id: string, title: string }[]>([]);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hello! I am Aletheia, your Multimedia Research Assistant. How can I help you explore academic topics today?',
+      content: 'Hello! I am Aletheia. How can I help you today?',
       timestamp: new Date(),
     }
   ]);
@@ -28,6 +30,25 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
 
+  const resetSession = () => {
+    // If current session has legitimate user messages, save it to threads if not already there
+    const hasUserMessages = messages.some(m => m.role === 'user');
+    if (hasUserMessages) {
+      const firstUserMessage = messages.find(m => m.role === 'user')?.content || "New Research";
+      if (!threads.find(t => t.id === sessionId)) {
+        setThreads(prev => [{ id: sessionId, title: firstUserMessage }, ...prev]);
+      }
+    }
+
+    setSessionId(uuidv4());
+    setMessages([{
+      id: 'welcome',
+      role: 'assistant',
+      content: 'Starting a new research thread. How can I help?',
+      timestamp: new Date(),
+    }]);
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -35,6 +56,25 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const fetchThreads = async () => {
+      if (!user) return;
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/threads', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (data.threads) {
+          setThreads(data.threads);
+        }
+      } catch (error) {
+        console.error("Failed to fetch threads", error);
+      }
+    };
+    fetchThreads();
+  }, [user]);
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
@@ -47,8 +87,37 @@ const App: React.FC = () => {
 
   const handleSignOut = () => signOut(auth);
 
+  const handleSelectThread = async (id: string) => {
+    setIsProcessing(true);
+    setCurrentStatus('Loading research thread...');
+    try {
+      const token = await user?.getIdToken();
+      const response = await fetch(`/api/session/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      if (data.messages && data.messages.length > 0) {
+        setMessages(data.messages.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        })));
+        setSessionId(id);
+      }
+    } catch (error) {
+      console.error("Failed to load thread", error);
+    } finally {
+      setIsProcessing(false);
+      setCurrentStatus('');
+    }
+  };
+
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || !user) return;
+
+    // Add current session to threads list if this is the first message
+    if (!threads.find(t => t.id === sessionId)) {
+      setThreads(prev => [{ id: sessionId, title: content }, ...prev]);
+    }
 
     const userMessage: Message = {
       id: uuidv4(),
@@ -74,6 +143,7 @@ const App: React.FC = () => {
         body: JSON.stringify({
           query: content,
           mode: mode,
+          sessionId: sessionId,
         }),
       });
 
@@ -130,12 +200,23 @@ const App: React.FC = () => {
             currentMode={mode}
             onModeChange={setMode}
             messages={messages}
+            userName={user.displayName}
+            userPhoto={user.photoURL}
+            onNewConversation={resetSession}
+            threads={threads}
+            onSelectThread={handleSelectThread}
           />
           <main className="flex-1 flex flex-col relative h-full">
-            <div className="absolute top-4 right-4 z-50">
+            <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
+                {user.photoURL && (
+                  <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full border border-zinc-700" />
+                )}
+                <span className="text-zinc-300 text-xs font-medium">{user.displayName}</span>
+              </div>
               <button
                 onClick={handleSignOut}
-                className="px-4 py-2 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
+                className="px-4 py-1.5 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
               >
                 Sign Out
               </button>

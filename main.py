@@ -22,9 +22,14 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from google.adk.runners import Runner
-from google.adk.sessions.in_memory_session_service import InMemorySessionService
-
-session_service = InMemorySessionService()
+try:
+    from google.adk.sessions.firestore_session_service import FirestoreSessionService
+    session_service = FirestoreSessionService()
+    logger.info("Using Firestore for session storage")
+except ImportError:
+    from google.adk.sessions.in_memory_session_service import InMemorySessionService
+    session_service = InMemorySessionService()
+    logger.info("Using InMemory session storage (Firestore session service not found)")
 
 # Import the ADK agent app
 try:
@@ -53,6 +58,7 @@ app.add_middleware(
 class ResearchRequest(BaseModel):
     query: str
     mode: str = "quick"
+    sessionId: str = None
 
 class FileItem(BaseModel):
     path: str
@@ -84,8 +90,11 @@ async def get_current_user(authorization: str = Header(None)):
     """
     Verifies the Firebase ID token sent from the frontend.
     """
+    is_dev = os.getenv("ENV") == "development"
+    
     if not authorization:
-        if os.getenv("ENV") == "development":
+        if is_dev:
+            logger.info("No auth header, using dev_user for local development")
             return "dev_user"
         raise HTTPException(status_code=401, detail="Authentication required")
     
@@ -96,7 +105,10 @@ async def get_current_user(authorization: str = Header(None)):
         return decoded_token.get("uid", "unknown_user")
     except Exception as e:
         logger.error(f"Auth error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid token")
+        if is_dev:
+             logger.warning("Token verification failed locally. Falling back to dev_user.")
+             return "dev_user"
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get_current_user)):
@@ -109,13 +121,44 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         # Invoke the agent using the ADK Runner
         runner = Runner(app=adk_app, session_service=session_service)
         
-        session_id = str(uuid.uuid4())
+        session_id = request.sessionId or str(uuid.uuid4())
         
+        # Check if session exists, if not create it
+        session_exists = False
+        try:
+            existing_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            if existing_session:
+                session_exists = True
+                logger.info(f"Reusing existing session: {session_id}")
+        except Exception:
+            pass
+
+        if not session_exists:
+            try:
+                logger.info(f"Initializing session: {session_id}")
+                await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    logger.info("Session already existed in backend, proceeding.")
+                else:
+                    raise e
+        
+        # Save the query as the title if this is a fresh session
+        try:
+            # Re-fetch or check state to see if title is needed
+            curr = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            if not curr.state or "title" not in curr.state:
+                await session_service.update_session(
+                    user_id=user_id, 
+                    session_id=session_id, 
+                    app_name=adk_app.name,
+                    state_update={"title": request.query[:50] + ("..." if len(request.query) > 50 else "")}
+                )
+        except Exception:
+            pass
+
         # Construct content object
         content = types.Content(parts=[types.Part(text=request.query)])
-        
-        # Explicitly create session before running
-        await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
 
         # Execute runner and consume generator
         async for event in runner.run_async(
@@ -187,6 +230,77 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         logger.error(f"Error processing research request: {e}", exc_info=True)
         # Return a 500 with the error message
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/threads")
+async def get_user_threads(user_id: str = Depends(get_current_user)):
+    """
+    Fetches all research threads (sessions) for the current user.
+    """
+    try:
+        # If we are using Firestore, we can query it directly
+        from google.cloud import firestore
+        db = firestore.AsyncClient()
+        
+        # This assumes FirestoreSessionService uses a collection named 'sessions'
+        # and stores user_id in the document.
+        # Note: Actual ADK collection/field names might vary.
+        sessions_ref = db.collection("sessions").where("user_id", "==", user_id)
+        docs = await sessions_ref.stream()
+        
+        threads = []
+        async for doc in docs:
+            data = doc.to_dict()
+            session_id = data.get("session_id")
+            
+            # Use the 'title' from state if available, otherwise fallback
+            title = data.get("state", {}).get("title", "Untitled Research")
+            
+            threads.append({
+                "id": session_id,
+                "title": title
+            })
+            
+        return {"threads": threads}
+    except Exception as e:
+        logger.error(f"Error fetching threads: {e}")
+        # Fallback for InMemory (no persistence anyway)
+        return {"threads": []}
+
+@app.get("/api/session/{session_id}")
+async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        if not session:
+            return {"messages": []}
+        
+        history = []
+        for event in session.events:
+            role = "assistant"
+            # Attempt to determine role and content
+            text = ""
+            if hasattr(event, 'content') and hasattr(event.content, 'parts'):
+                text = event.content.parts[0].text or ""
+                # Simple heuristic for role based on event type or content
+                # In ADK, events usually represent steps. We look for 'text' or 'output'
+            elif hasattr(event, 'text'):
+                text = event.text or ""
+            elif hasattr(event, 'output'):
+                text = event.output or ""
+            
+            if not text: continue
+            
+            # Very simple mapping for UI
+            history.append({
+                "id": str(event.event_id),
+                "role": "assistant" if "Thought" not in text else "system", # simplified
+                "content": text,
+                "timestamp": event.created_at
+            })
+            
+        return {"messages": history}
+    except Exception as e:
+        logger.error(f"Error fetching session: {e}")
+        return {"messages": []}
 
 # Mount the built frontend (Vite's default output is 'dist')
 # Note: In the Dockerfile, we will build the React app and place it in the 'dist' folder
