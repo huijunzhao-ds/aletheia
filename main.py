@@ -2,7 +2,6 @@ import os
 import re
 import logging
 import uuid
-from typing import List
 from google.genai import types
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +10,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
 import base64
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,31 +23,160 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from google.adk.runners import Runner
+import datetime
+from typing import List, Optional, Any, Dict
+from google.adk.sessions.base_session_service import BaseSessionService
+from google.adk.sessions.session import Session
+from google.adk.events.event import Event
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
+
+def scrub_blobs(obj):
+    """
+    Recursively removes large binary data (base64 strings) from the session 
+    to stay within Firestore's 1MB document limit.
+    """
+    if isinstance(obj, dict):
+        if "inline_data" in obj and isinstance(obj["inline_data"], dict):
+            blob = obj["inline_data"]
+            if "data" in blob and isinstance(blob["data"], str) and len(blob["data"]) > 1024:
+                # Use a valid base64 placeholder to avoid Pydantic validation errors on reload
+                # 'REFUQV9TVFJJUFBFRF9GT1JfU1RPUkFHRQ==' is base64 for 'DATA_STRIPPED_FOR_STORAGE'
+                blob["data"] = "REFUQV9TVFJJUFBFRF9GT1JfU1RPUkFHRQ=="
+        return {k: scrub_blobs(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [scrub_blobs(x) for x in obj]
+    return obj
+
+def rescue_blobs(obj):
+    """
+    Cleans up legacy invalid base64 placeholders to prevent validation crashes.
+    """
+    if isinstance(obj, dict):
+        if "inline_data" in obj and isinstance(obj["inline_data"], dict):
+            blob = obj["inline_data"]
+            if "data" in blob and isinstance(blob["data"], str) and blob["data"].startswith("[Data stripped"):
+                blob["data"] = "REFUQV9TVFJJUFBFRF9GT1JfU1RPUkFHRQ=="
+        return {k: rescue_blobs(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [rescue_blobs(x) for x in obj]
+    return obj
+
+class FirestoreSessionService(BaseSessionService):
+    """
+    Custom Firestore-backed session service for Aletheia.
+    Provides persistence for research threads and conversation history.
+    """
+    def __init__(self, collection_name="sessions"):
+        try:
+            from google.cloud import firestore
+            self.db = firestore.AsyncClient()
+            self.collection_name = collection_name
+            self.firestore_module = firestore
+        except ImportError:
+            logger.error("google-cloud-firestore not installed. FirestoreSessionService will not work.")
+            raise
+
+    async def get_session(self, *, user_id: str, session_id: str, app_name: str) -> Optional[Session]:
+        doc = await self.db.collection(self.collection_name).document(session_id).get()
+        if doc.exists:
+            data = doc.to_dict()
+            if data.get("user_id") == user_id and data.get("app_name") == app_name:
+                # Deserialize events if they are stored as a JSON string
+                events_data = data.get("events")
+                if isinstance(events_data, str):
+                    try:
+                        data["events"] = json.loads(events_data)
+                    except Exception as e:
+                        logger.error(f"Failed to parse stringified events: {e}")
+                        data["events"] = []
+                # Rescue legacy invalid base64 strings
+                data = rescue_blobs(data)
+                return Session.model_validate(data)
+        return None
+
+    async def create_session(self, *, user_id: str, session_id: str, app_name: str, state: Optional[Dict[str, Any]] = None, **kwargs) -> Session:
+        session = Session(
+            id=session_id,
+            user_id=user_id,
+            app_name=app_name,
+            state=state or {},
+            events=[],
+            last_update_time=datetime.datetime.now(datetime.timezone.utc).timestamp()
+        )
+        data = session.model_dump(mode='json', exclude_none=True)
+        # Scrub large blobs to stay under 1MB limit
+        data = scrub_blobs(data)
+        # Stringify events to bypass Firestore's nested array limitation
+        data["events"] = json.dumps(data.get("events", []))
+        await self.db.collection(self.collection_name).document(session_id).set(data)
+        return session
+
+    async def append_event(self, *, session: Session, event: Event) -> Event:
+        session.events.append(event)
+        ts = event.timestamp or datetime.datetime.now(datetime.timezone.utc)
+        if hasattr(ts, 'timestamp'):
+            ts = ts.timestamp()
+        session.last_update_time = ts
+        
+        data = session.model_dump(mode='json', exclude_none=True)
+        # Scrub large blobs to stay under 1MB limit
+        data = scrub_blobs(data)
+        # Stringify events to bypass Firestore's nested array limitation
+        data["events"] = json.dumps(data.get("events", []))
+        
+        await self.db.collection(self.collection_name).document(session.id).set(data)
+        return event
+
+    async def update_session(self, *, user_id: str, session_id: str, app_name: str, state_update: Dict[str, Any]) -> None:
+        doc_ref = self.db.collection(self.collection_name).document(session_id)
+        doc = await doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict()
+            state = data.get("state", {})
+            state.update(state_update)
+            await doc_ref.update({"state": state})
+
+    async def list_sessions(self, *, user_id: str, app_name: str) -> List[Session]:
+        docs = self.db.collection(self.collection_name).where("user_id", "==", user_id).where("app_name", "==", app_name).stream()
+        results = []
+        async for doc in docs:
+            data = doc.to_dict()
+            events_data = data.get("events")
+            if isinstance(events_data, str):
+                try:
+                    data["events"] = json.loads(events_data)
+                except:
+                    data["events"] = []
+            # Rescue legacy invalid base64 strings
+            data = rescue_blobs(data)
+            results.append(Session.model_validate(data))
+        return results
+
+    async def list_sessions_for_user(self, *, user_id: str, app_name: str) -> List[Session]:
+        return await self.list_sessions(user_id=user_id, app_name=app_name)
+
+    async def delete_session(self, *, user_id: str, session_id: str, app_name: str) -> None:
+        await self.db.collection(self.collection_name).document(session_id).delete()
+
+# Initialize session service
 try:
-    from google.adk.sessions.firestore_session_service import FirestoreSessionService
     session_service = FirestoreSessionService()
-    logger.info("Using Firestore for session storage")
-except ImportError as e:
-    # Only fall back to in-memory sessions if the Firestore session service module
-    # itself cannot be imported. For other import errors, re-raise to surface
-    # potential misconfigurations (e.g., missing dependencies).
-    missing_module = getattr(e, "name", None)
-    if (
-        missing_module == "google.adk.sessions.firestore_session_service"
-        or "google.adk.sessions.firestore_session_service" in str(e)
-    ):
-        from google.adk.sessions.in_memory_session_service import InMemorySessionService
-        session_service = InMemorySessionService()
-        logger.warning(
-            "Using InMemory session storage (Firestore session service module not found): %s",
-            e,
-        )
-    else:
-        logger.error(
-            "Failed to import FirestoreSessionService due to an unexpected ImportError: %s",
-            e,
-        )
-        raise
+    logger.info("Using custom FirestoreSessionService for storage")
+except Exception as e:
+    logger.warning(f"Falling back to InMemorySessionService: {e}")
+    session_service = InMemorySessionService()
+    # Patch InMemorySessionService to support update_session to avoid crashes
+    if not hasattr(session_service, "update_session"):
+        async def update_session_mock(*, user_id, session_id, app_name, state_update):
+            sess = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=app_name)
+            if sess:
+                sess.state.update(state_update)
+        session_service.update_session = update_session_mock
+    
+    if not hasattr(session_service, "list_sessions_for_user"):
+        async def list_sessions_for_user_mock(*, user_id, app_name):
+            return await session_service.list_sessions(user_id=user_id, app_name=app_name)
+        session_service.list_sessions_for_user = list_sessions_for_user_mock
 
 # Import the ADK agent app
 try:
