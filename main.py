@@ -72,7 +72,7 @@ class ResearchResponse(BaseModel):
 from fastapi import Depends, Header
 
 import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
+from firebase_admin import auth as firebase_auth
 
 # Initialize Firebase Admin
 # If running on GCP, it will automatically use the environment's project ID.
