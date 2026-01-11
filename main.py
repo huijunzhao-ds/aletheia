@@ -32,10 +32,15 @@ session_service = get_session_service()
 
 app = FastAPI()
 
-# Mount static files directory
-os.makedirs("static", exist_ok=True)
-os.makedirs("static/docs", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Static files setup with absolute paths for cloud safety
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+DOCS_DIR = os.path.join(STATIC_DIR, "docs")
+
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(DOCS_DIR, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # CORS Middleware setup
 app.add_middleware(
@@ -94,14 +99,20 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             try:
                 file_bytes = base64.b64decode(f.data)
                 
-                # Persist to static/docs/ for historical retrieval (since active session blobs are scrubbed)
+                # Persist to static/docs/ with absolute path for cloud reliability
                 safe_name = "".join([c if c.isalnum() or c in ".-_" else "_" for c in f.name])
-                # We use session_id to avoid collisions but keep it predictable
-                file_rel_path = f"static/docs/{session_id}_{safe_name}"
-                with open(file_rel_path, "wb") as bf:
+                filename = f"{session_id}_{safe_name}"
+                file_abs_path = os.path.join(DOCS_DIR, filename)
+                
+                with open(file_abs_path, "wb") as bf:
                     bf.write(file_bytes)
                 
-                url_path = f"/{file_rel_path}"
+                if os.path.exists(file_abs_path):
+                    logger.info(f"Successfully persisted file to disk: {file_abs_path}")
+                else:
+                    logger.error(f"Failed to find file on disk after write attempt: {file_abs_path}")
+                
+                url_path = f"/static/docs/{filename}"
                 uploaded_doc_metadata.append({
                     "name": f.name,
                     "path": url_path,
