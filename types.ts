@@ -5,6 +5,7 @@ export interface GeneratedFile {
   path: string;
   type: FileType;
   name: string;
+  unavailable?: boolean;
 }
 
 export interface Message {

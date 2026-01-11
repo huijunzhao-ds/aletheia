@@ -33,6 +33,7 @@ session_service = get_session_service()
 app = FastAPI()
 
 # Static files setup with absolute paths for cloud safety
+IS_CLOUD_RUN = os.getenv("K_SERVICE") is not None
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 DOCS_DIR = os.path.join(STATIC_DIR, "docs")
@@ -382,9 +383,14 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
             name = os.path.basename(path) if isinstance(f, str) else f.get("name", os.path.basename(path))
             
             if path and (path.lower().endswith(".pdf") or (isinstance(f, dict) and f.get("type") == "pdf")):
+                # Check existence
+                local_path = path[1:] if path.startswith("/") else path
+                is_available = os.path.exists(local_path)
+                
                 all_docs.append({
                     "name": name,
-                    "url": path if path.startswith("/") or "://" in path else f"/{path}"
+                    "url": path if path.startswith("/") or "://" in path else f"/{path}",
+                    "unavailable": not is_available
                 })
         
         # 2. From specifically tracked uploaded files
@@ -393,12 +399,15 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
                 path = f.get("path")
                 # Remove leading slash for local disk check
                 local_path = path[1:] if path and path.startswith("/") else path
-                if local_path and not os.path.exists(local_path):
-                    logger.warning(f"Document file not found on disk: {local_path} for session {session_id}")
+                is_available = os.path.exists(local_path or "")
+                
+                if not is_available:
+                    logger.warning(f"Document file missing disk: {local_path} for session {session_id}")
                 
                 all_docs.append({
                     "name": f.get("name"),
-                    "url": path if path.startswith("/") or "://" in path else f"/{path}"
+                    "url": path if path.startswith("/") or "://" in path else f"/{path}",
+                    "unavailable": not is_available
                 })
 
         return {
