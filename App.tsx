@@ -11,6 +11,7 @@ import {
   signOut,
   User
 } from "firebase/auth";
+import { DocumentViewer } from './components/DocumentViewer';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -28,6 +29,8 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
+  const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -55,6 +58,8 @@ const App: React.FC = () => {
       content: 'Starting a new research thread. How can I help?',
       timestamp: new Date(),
     }]);
+    setActiveDocument(null);
+    setSessionDocuments([]);
   };
 
   useEffect(() => {
@@ -115,6 +120,17 @@ const App: React.FC = () => {
           ...m,
           timestamp: new Date(m.timestamp)
         })));
+
+        // Restore documents and active document
+        if (data.documents && data.documents.length > 0) {
+          setSessionDocuments(data.documents);
+          // Auto-open the most recent document
+          setActiveDocument(data.documents[data.documents.length - 1]);
+        } else {
+          setSessionDocuments([]);
+          setActiveDocument(null);
+        }
+
         setSessionId(id);
       }
     } catch (error) {
@@ -154,15 +170,31 @@ const App: React.FC = () => {
       });
     }));
 
-    const fileListText = files.length > 0 ? ` [Attached: ${files.map(f => f.name).join(', ')}]` : '';
     const userMessage: Message = {
       id: uuidv4(),
       role: 'user',
-      content: content + fileListText,
+      content: content,
       timestamp: new Date(),
+      files: files.map(f => ({
+        path: URL.createObjectURL(f),
+        type: f.name.endsWith('.pdf') ? 'pdf' : (f.type.includes('audio') ? 'mp3' : f.type.includes('video') ? 'mp4' : 'pptx'),
+        name: f.name
+      }))
     };
 
     setMessages(prev => [...prev, userMessage]);
+
+    // Auto-open the last uploaded PDF in the viewer
+    const pdfFiles = files.filter(f => f.type === 'application/pdf');
+    if (pdfFiles.length > 0) {
+      const newDocs = pdfFiles.map(f => ({
+        name: f.name,
+        url: URL.createObjectURL(f)
+      }));
+      setSessionDocuments(prev => [...prev, ...newDocs]);
+      setActiveDocument(newDocs[newDocs.length - 1]);
+    }
+
     setIsProcessing(true);
     setCurrentStatus(files.length > 0 ? 'Aletheia is analyzing your documents...' : 'Aletheia is initiating research protocol...');
 
@@ -239,28 +271,59 @@ const App: React.FC = () => {
             onNewConversation={resetSession}
             threads={threads}
             onSelectThread={handleSelectThread}
+            documents={sessionDocuments}
+            onSelectDocument={setActiveDocument}
+            activeDocumentUrl={activeDocument?.url}
           />
-          <main className="flex-1 flex flex-col relative h-full">
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
-                {user.photoURL && (
-                  <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full border border-zinc-700" />
-                )}
-                <span className="text-zinc-300 text-xs font-medium">{user.displayName}</span>
-              </div>
+          <main className="flex-1 flex overflow-hidden relative">
+            {!isSidebarOpen && (
               <button
-                onClick={handleSignOut}
-                className="px-4 py-1.5 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
+                onClick={() => setIsSidebarOpen(true)}
+                className="absolute top-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
+                title="Show Sidebar"
               >
-                Sign Out
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
               </button>
+            )}
+            <div className={`flex flex-col relative h-full border-r border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
+              <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
+                  {user.photoURL && (
+                    <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full border border-zinc-700" />
+                  )}
+                  <span className="text-zinc-300 text-xs font-medium">{user.displayName}</span>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="px-4 py-1.5 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
+                >
+                  Sign Out
+                </button>
+              </div>
+              <ChatArea
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                isProcessing={isProcessing}
+                currentStatus={currentStatus}
+                onFileClick={(file) => {
+                  if (file.type === 'pdf') {
+                    setActiveDocument({ url: file.path, name: file.name });
+                  }
+                }}
+                userPhoto={user.photoURL}
+              />
             </div>
-            <ChatArea
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              isProcessing={isProcessing}
-              currentStatus={currentStatus}
-            />
+            {activeDocument && (
+              <div className="flex-1 h-full flex flex-col min-w-0">
+                <DocumentViewer
+                  url={activeDocument.url}
+                  name={activeDocument.name}
+                  onClose={() => setActiveDocument(null)}
+                />
+              </div>
+            )}
           </main>
         </>
       ) : (

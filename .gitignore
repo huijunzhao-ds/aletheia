@@ -55,6 +55,7 @@ MANIFEST
 static/audio/*
 static/videos/*
 static/slides/*
+static/docs/*
 !static/**/.gitkeep
 
 # OS

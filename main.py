@@ -34,6 +34,7 @@ app = FastAPI()
 
 # Mount static files directory
 os.makedirs("static", exist_ok=True)
+os.makedirs("static/docs", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS Middleware setup
@@ -85,16 +86,53 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         except Exception:
             logger.exception(f"Error setting session title for session: {session_id}")
 
-        # Construct content object
+        # Construct content object and persist files for history
         parts = [types.Part(text=request.query)]
+        uploaded_doc_metadata = []
+        
         for f in request.files:
             try:
                 file_bytes = base64.b64decode(f.data)
-                parts.append(types.Part(inline_data=types.Blob(mime_type=f.mime_type, data=file_bytes)))
-                logger.info(f"Added file to request: {f.name} ({f.mime_type})")
-            except Exception as e:
-                logger.error(f"Failed to process file {f.name}: {e}")
                 
+                # Persist to static/docs/ for historical retrieval (since active session blobs are scrubbed)
+                safe_name = "".join([c if c.isalnum() or c in ".-_" else "_" for c in f.name])
+                # We use session_id to avoid collisions but keep it predictable
+                file_rel_path = f"static/docs/{session_id}_{safe_name}"
+                with open(file_rel_path, "wb") as bf:
+                    bf.write(file_bytes)
+                
+                url_path = f"/{file_rel_path}"
+                uploaded_doc_metadata.append({
+                    "name": f.name,
+                    "path": url_path,
+                    "type": "pdf" if f.name.lower().endswith(".pdf") else "other"
+                })
+                
+                parts.append(types.Part(inline_data=types.Blob(mime_type=f.mime_type, data=file_bytes)))
+                logger.info(f"Added and persisted file: {f.name} ({f.mime_type})")
+            except Exception as e:
+                logger.error(f"Failed to process/persist file {f.name}: {e}")
+                
+        # Update session state with persisted file metadata
+        if uploaded_doc_metadata:
+            try:
+                curr_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+                existing_uploaded = curr_session.state.get("uploaded_files", [])
+                # Deduplicate by path
+                existing_paths = {uf.get("path") for uf in existing_uploaded if isinstance(uf, dict)}
+                for doc in uploaded_doc_metadata:
+                    if doc["path"] not in existing_paths:
+                        existing_uploaded.append(doc)
+                
+                await session_service.update_session(
+                    user_id=user_id,
+                    session_id=session_id,
+                    app_name=adk_app.name,
+                    state_update={"uploaded_files": existing_uploaded}
+                )
+            except Exception as e:
+                logger.error(f"Failed to update session with uploaded file metadata: {e}")
+
         content = types.Content(parts=parts)
 
         # Execute runner
@@ -183,20 +221,39 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
         if not session:
             return {"messages": []}
         
+        # Prepare pools for matching files to messages
         history = []
+        gen_files = session.state.get("generated_files", []) or []
+        uploaded_files = session.state.get("uploaded_files", []) or []
+        unassigned_uploads = list(uploaded_files)
+        unassigned_generated = list(gen_files)
+        
+        logger.info(f"Loading history for session {session_id}. State has {len(uploaded_files)} uploads and {len(gen_files)} generated files.")
+        
         for event in session.events:
             text = ""
             content = getattr(event, "content", None)
             if content:
                 parts = getattr(content, "parts", None)
                 if parts:
-                    text = "\n".join([getattr(p, "text", "") for p in parts if getattr(p, "text", "")])
+                    # Filter out the scrubbed file placeholder from the UI text
+                    text_parts = []
+                    for p in parts:
+                        p_text = getattr(p, "text", "")
+                        # Handle potential None value from valid but empty attribute
+                        p_text_str = str(p_text or "")
+                        if p_text_str and "[External file data not preserved in history]" not in p_text_str:
+                            text_parts.append(p_text_str)
+                    text = "\n".join(text_parts)
             
             if not text:
-                text = getattr(event, "text", "") or getattr(event, "output", "") or ""
+                # Still check event level text but filter placeholder
+                raw_text = getattr(event, "text", "") or getattr(event, "output", "") or ""
+                if "[External file data not preserved in history]" not in str(raw_text):
+                    text = raw_text
             
-            if not text or not str(text).strip():
-                continue
+            # If after filtering there is no text AND no files (checked later), we might still want to show the bubble
+            # if it was an upload-only message.
             
             # Improved role detection for ADK Events
             role = None
@@ -236,14 +293,102 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
                 else:
                     role = "assistant"
             
+            # Extract files if any
+            files = []
+            if content:
+                parts = getattr(content, "parts", None)
+                if parts:
+                    for p in parts:
+                        if hasattr(p, "inline_data"):
+                            # This is an uploaded file
+                            # Note: Data might be scrubbed, but we still want the name/type
+                            # For now, we can only reasonably restore generated files with paths
+                            pass
+            
+            # ADK often stores generated files in session.state['generated_files']
+            # We'll check if this specific event (if it's the final assistant response) 
+            # matches the generated files.
+            
+            # Match files to this specific message using consumption logic
+            msg_files = []
+            
+            # 1. Match Uploaded Files (User role)
+            # We count scrubbed parts to know how many files to pull from the session pool
+            if role == "user" and content:
+                scrubbed_count = 0
+                for p in getattr(content, "parts", []):
+                    p_val = getattr(p, "text", "")
+                    if "[External file data not preserved in history]" in str(p_val or ""):
+                        scrubbed_count += 1
+                
+                for _ in range(scrubbed_count):
+                    if unassigned_uploads:
+                        up = unassigned_uploads.pop(0)
+                        if isinstance(up, dict):
+                            msg_files.append({
+                                "path": up.get("path"),
+                                "type": "pdf" if up.get("path", "").lower().endswith(".pdf") else "other",
+                                "name": up.get("name")
+                            })
+
+            # 2. Match Generated Files (Assistant role)
+            # Usually assistant responses follow a tool call that generates files.
+            # If the response text mentions synthesis or files, we assign from the generated pool.
+            if role == "assistant":
+                # Heuristic: if this is a synthesis message, it likely corresponds to the latest generated files
+                # For now, if we have unassigned generated files, we assign them to the next assistant message
+                if unassigned_generated:
+                    # Assistant messages usually come one by one after Turn/Tool events.
+                    # We'll take ALL currently unassigned generated files if this message looks final.
+                    if text.strip() == "Research synthesis complete." or "report" in text.lower():
+                        while unassigned_generated:
+                            f = unassigned_generated.pop(0)
+                            path = f if isinstance(f, str) else f.get("path")
+                            name = os.path.basename(path) if isinstance(f, str) else f.get("name", os.path.basename(path))
+                            msg_files.append({
+                                "path": path if path.startswith("/") or "://" in path else f"/{path}",
+                                "type": "pdf" if path.lower().endswith(".pdf") else "other",
+                                "name": name
+                            })
+
+            # Skip messages with no text AND no files (unless it's a thinking placeholder, which we don't handle here yet)
+            if not text.strip() and not msg_files:
+                continue
+
             history.append({
                 "id": str(event.id),
                 "role": role,
                 "content": text,
-                "timestamp": event.timestamp
+                "timestamp": event.timestamp,
+                "files": msg_files
             })
             
-        return {"messages": history}
+        # Collect all session-wide documents
+        all_docs = []
+        # 1. From generated files
+        for f in gen_files:
+            path = f if isinstance(f, str) else f.get("path")
+            name = os.path.basename(path) if isinstance(f, str) else f.get("name", os.path.basename(path))
+            
+            if path and (path.lower().endswith(".pdf") or (isinstance(f, dict) and f.get("type") == "pdf")):
+                all_docs.append({
+                    "name": name,
+                    "url": path if path.startswith("/") or "://" in path else f"/{path}"
+                })
+        
+        # 2. From specifically tracked uploaded files
+        for f in uploaded_files:
+            if isinstance(f, dict) and f.get("type") == "pdf":
+                path = f.get("path")
+                all_docs.append({
+                    "name": f.get("name"),
+                    "url": path if path.startswith("/") or "://" in path else f"/{path}"
+                })
+
+        return {
+            "messages": history,
+            "documents": all_docs
+        }
     except Exception as e:
         logger.error(f"Error fetching session {session_id}: {e}", exc_info=True)
         return {"messages": []}

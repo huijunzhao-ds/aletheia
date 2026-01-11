@@ -11,6 +11,9 @@ interface SidebarProps {
   onNewConversation?: () => void;
   threads?: { id: string, title: string }[];
   onSelectThread?: (id: string) => void;
+  documents?: { name: string, url: string }[];
+  onSelectDocument?: (doc: { name: string, url: string }) => void;
+  activeDocumentUrl?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -21,7 +24,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userPhoto,
   onNewConversation,
   threads = [],
-  onSelectThread
+  onSelectThread,
+  documents = [],
+  onSelectDocument,
+  activeDocumentUrl
 }) => {
   return (
     <aside
@@ -60,7 +66,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <div className="p-4 space-y-4 flex-1">
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        {documents.length > 0 && (
+          <div className="pt-2">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block mb-2">Research Documents</label>
+            <div className="space-y-1">
+              {documents.map((doc, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => onSelectDocument?.(doc)}
+                  className={`px-3 py-2 text-sm rounded cursor-pointer truncate flex items-center gap-2 group transition-colors ${activeDocumentUrl === doc.url
+                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
+                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-transparent'
+                    }`}
+                >
+                  <svg className={`w-3.5 h-3.5 ${activeDocumentUrl === doc.url ? 'text-indigo-400' : 'text-red-500 opacity-70 group-hover:opacity-100'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  {doc.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="pt-6">
           <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block mb-2">Recent Research</label>

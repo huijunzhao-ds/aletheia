@@ -1,5 +1,5 @@
 
-export type FileType = 'mp3' | 'mp4' | 'pptx';
+export type FileType = 'mp3' | 'mp4' | 'pptx' | 'pdf';
 
 export interface GeneratedFile {
   path: string;

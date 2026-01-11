@@ -7,25 +7,31 @@ import { Message, GeneratedFile } from '../types';
 
 interface MessageItemProps {
   message: Message;
+  onFileClick?: (file: GeneratedFile) => void;
+  userPhoto?: string | null;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, userPhoto }) => {
   const isAssistant = message.role === 'assistant';
 
   return (
     <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500 w-full mb-6`}>
       <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${!isAssistant ? 'flex-row-reverse space-x-reverse' : ''}`}>
         {/* Avatar */}
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 overflow-hidden ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
           }`}>
           {isAssistant ? (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
             </svg>
           ) : (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+            userPhoto ? (
+              <img src={userPhoto} alt="User" className="w-full h-full object-cover" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            )
           )}
         </div>
 
@@ -96,11 +102,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
             </ReactMarkdown>
           </div>
 
-          {/* Generated Files */}
-          {isAssistant && message.files && message.files.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 mt-4 w-full max-w-xl">
+          {/* Message Files */}
+          {message.files && message.files.length > 0 && (
+            <div className={`grid grid-cols-1 gap-4 mt-4 w-full max-w-xl ${!isAssistant ? 'ml-auto' : ''}`}>
               {message.files.map((file, idx) => (
-                <MediaRenderer key={idx} file={file} />
+                <MediaRenderer key={idx} file={file} onFileClick={onFileClick} isAssistant={isAssistant} />
               ))}
             </div>
           )}
@@ -115,8 +121,36 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
   );
 };
 
-const MediaRenderer: React.FC<{ file: GeneratedFile }> = ({ file }) => {
+const MediaRenderer: React.FC<{
+  file: GeneratedFile,
+  onFileClick?: (file: GeneratedFile) => void,
+  isAssistant: boolean
+}> = ({ file, onFileClick, isAssistant }) => {
   switch (file.type) {
+    case 'pdf':
+      return (
+        <button
+          onClick={() => onFileClick?.(file)}
+          className={`group flex items-center p-4 bg-zinc-900 border rounded-xl transition-all shadow-md animate-in zoom-in-95 duration-300 w-full text-left ${isAssistant ? 'border-zinc-800 hover:border-indigo-500' : 'border-indigo-500/30 hover:bg-zinc-800'
+            }`}
+        >
+          <div className="p-3 bg-red-500/10 group-hover:bg-red-500/20 rounded-lg transition-colors mr-4">
+            <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-zinc-200 group-hover:text-indigo-400 transition-colors truncate">{file.name}</div>
+            <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">PDF Document • Click to View</div>
+          </div>
+          <div className="p-2 text-zinc-500 group-hover:text-indigo-400 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+        </button>
+      );
     case 'mp3':
       return (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 shadow-md animate-in zoom-in-95 duration-300">

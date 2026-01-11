@@ -8,13 +8,17 @@ interface ChatAreaProps {
   onSendMessage: (content: string, files?: File[]) => void;
   isProcessing: boolean;
   currentStatus: string;
+  onFileClick?: (file: GeneratedFile) => void;
+  userPhoto?: string | null;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   messages,
   onSendMessage,
   isProcessing,
-  currentStatus
+  currentStatus,
+  onFileClick,
+  userPhoto
 }) => {
   const [input, setInput] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -75,7 +79,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         className="flex-1 overflow-y-auto px-4 md:px-8 py-8 space-y-8 scroll-smooth"
       >
         {messages.map((message) => (
-          <MessageItem key={message.id} message={message} />
+          <MessageItem key={message.id} message={message} onFileClick={onFileClick} userPhoto={userPhoto} />
         ))}
 
         {isProcessing && (
