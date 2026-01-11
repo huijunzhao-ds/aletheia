@@ -395,17 +395,28 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
 
 # Serve Frontend
 if os.path.exists("dist"):
+    logger.info("Serving production frontend from 'dist' directory.")
     app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+    
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        # Prevent accessing API or Static via this catch-all
         if full_path.startswith("api") or full_path.startswith("static"):
             raise HTTPException(status_code=404)
+            
         path = os.path.join("dist", full_path)
-        if os.path.isfile(path):
+        if full_path and os.path.isfile(path):
             from fastapi.responses import FileResponse
             return FileResponse(path)
+        
+        # SPA fallback: Always return index.html for unknown routes
         from fastapi.responses import FileResponse
-        return FileResponse("dist/index.html")
+        index_path = "dist/index.html"
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return HTTPException(status_code=404, detail="Index file not found")
+else:
+    logger.warning("'dist' directory not found. Frontend will not be served.")
 
 if __name__ == "__main__":
     import uvicorn

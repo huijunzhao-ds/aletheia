@@ -35,14 +35,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the built frontend from Stage 1
-COPY --from=frontend-builder /app/dist ./dist
-
 # Copy the rest of the application code
 COPY . .
 
+# Copy the built frontend from Stage 1 (ensure it overwrites any local dist if present)
+COPY --from=frontend-builder /app/dist ./dist
+
 # Ensure the static directory exists for generated files
-RUN mkdir -p static/audio static/videos static/slides
+RUN mkdir -p static/audio static/videos static/slides static/docs
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
