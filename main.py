@@ -380,6 +380,11 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
         for f in uploaded_files:
             if isinstance(f, dict) and f.get("type") == "pdf":
                 path = f.get("path")
+                # Remove leading slash for local disk check
+                local_path = path[1:] if path and path.startswith("/") else path
+                if local_path and not os.path.exists(local_path):
+                    logger.warning(f"Document file not found on disk: {local_path} for session {session_id}")
+                
                 all_docs.append({
                     "name": f.get("name"),
                     "url": path if path.startswith("/") or "://" in path else f"/{path}"
@@ -400,21 +405,26 @@ if os.path.exists("dist"):
     
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        # Prevent accessing API or Static via this catch-all
-        if full_path.startswith("api") or full_path.startswith("static"):
-            raise HTTPException(status_code=404)
-            
-        path = os.path.join("dist", full_path)
-        if full_path and os.path.isfile(path):
+        # Explicitly check if the file exists in the 'dist' directory
+        # This handles assets like favicon.ico, manifest.json, etc.
+        dist_file_path = os.path.join("dist", full_path)
+        if full_path and os.path.isfile(dist_file_path):
             from fastapi.responses import FileResponse
-            return FileResponse(path)
+            return FileResponse(dist_file_path)
+            
+        # If it's an API or Static path that reached here, it means the specific 
+        # routes/mounts didn't catch it. We should 404 instead of returning index.html
+        if full_path.startswith("api/") or full_path.startswith("static/"):
+            logger.warning(f"Static/API request fall-through to catch-all: {full_path}")
+            raise HTTPException(status_code=404, detail=f"The requested asset '{full_path}' was not found.")
         
-        # SPA fallback: Always return index.html for unknown routes
+        # SPA fallback: Send index.html for any other route to let React handle it
         from fastapi.responses import FileResponse
         index_path = "dist/index.html"
         if os.path.exists(index_path):
             return FileResponse(index_path)
-        return HTTPException(status_code=404, detail="Index file not found")
+            
+        return HTTPException(status_code=404, detail="Application entry point (index.html) not found.")
 else:
     logger.warning("'dist' directory not found. Frontend will not be served.")
 
