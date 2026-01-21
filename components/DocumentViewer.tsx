@@ -8,7 +8,7 @@ interface DocumentViewerProps {
 
 export const DocumentViewer: React.FC<DocumentViewerProps> = ({ url, name, onClose }) => {
     return (
-        <div className="flex flex-col h-full bg-zinc-900 border-l border-zinc-800 animate-in slide-in-from-right duration-500">
+        <div className="flex flex-col h-full bg-zinc-900 border-r border-zinc-800 animate-in slide-in-from-left duration-500">
             <div className="flex items-center justify-between px-4 py-3 bg-zinc-950 border-b border-zinc-800">
                 <div className="flex items-center space-x-3">
                     <div className="p-1.5 bg-red-500/20 rounded">

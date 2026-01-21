@@ -288,7 +288,16 @@ const App: React.FC = () => {
                 </svg>
               </button>
             )}
-            <div className={`flex flex-col relative h-full border-r border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
+            {activeDocument && (
+              <div className="flex-1 h-full flex flex-col min-w-0">
+                <DocumentViewer
+                  url={activeDocument.url}
+                  name={activeDocument.name}
+                  onClose={() => setActiveDocument(null)}
+                />
+              </div>
+            )}
+            <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
               <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
                   {user.photoURL && (
@@ -319,26 +328,22 @@ const App: React.FC = () => {
                 userPhoto={user.photoURL}
               />
             </div>
-            {activeDocument && (
-              <div className="flex-1 h-full flex flex-col min-w-0">
-                <DocumentViewer
-                  url={activeDocument.url}
-                  name={activeDocument.name}
-                  onClose={() => setActiveDocument(null)}
-                />
-              </div>
-            )}
           </main>
         </>
       ) : (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-zinc-950 text-white p-4">
-          <div className="max-w-md text-center space-y-6">
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
-              Aletheia
-            </h1>
-            <p className="text-zinc-400 text-lg">
-              Unlock the future of multimedia research. Sign in to start your journey.
-            </p>
+        <div className="flex flex-col items-center justify-center w-full h-full bg-[#0a0a14] text-white p-4 relative overflow-hidden">
+          {/* Background effects */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0a0a14] to-[#0a0a14]"></div>
+
+          <div className="max-w-md text-center space-y-8 relative z-10">
+            <div className="space-y-4">
+              <p className="text-zinc-300 text-lg font-normal tracking-wide">
+                Live Research Intelligence System
+              </p>
+              <h1 className="text-6xl md:text-7xl font-medium italic bg-gradient-to-br from-blue-300 via-blue-500 to-blue-600 bg-clip-text text-transparent pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>
+                Aletheia
+              </h1>
+            </div>
             <div className="pt-4">
               <button
                 onClick={handleGoogleSignIn}
@@ -348,6 +353,9 @@ const App: React.FC = () => {
                 Sign in with Google
               </button>
             </div>
+            <p className="text-zinc-500 text-sm mt-8 font-normal tracking-wide opacity-80">
+              Limited spots available. No credit card required.
+            </p>
           </div>
         </div>
       )}
