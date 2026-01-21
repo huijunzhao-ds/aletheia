@@ -1,3 +1,4 @@
+import os
 import logging
 import datetime
 import json
@@ -77,7 +78,9 @@ class FirestoreSessionService(BaseSessionService):
     def __init__(self, collection_name="sessions"):
         try:
             from google.cloud import firestore
-            self.db = firestore.AsyncClient()
+            database_id = os.getenv("FIREBASE_DATABASE_ID", "(default)")
+            logger.info(f"Connecting to Firestore database: {database_id}")
+            self.db = firestore.AsyncClient(database=database_id)
             self.collection_name = collection_name
             self.firestore_module = firestore
         except ImportError:

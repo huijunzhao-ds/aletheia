@@ -11,7 +11,7 @@ interface SidebarProps {
   onNewConversation?: () => void;
   threads?: { id: string, title: string }[];
   onSelectThread?: (id: string) => void;
-  documents?: { name: string, url: string, unavailable?: boolean }[];
+  documents?: { name: string, url: string }[];
   onSelectDocument?: (doc: { name: string, url: string }) => void;
   activeDocumentUrl?: string;
 }
@@ -74,28 +74,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {documents.map((doc, idx) => (
                 <div
                   key={idx}
-                  onClick={() => !doc.unavailable && onSelectDocument?.(doc)}
-                  title={doc.unavailable ? "This document exists on another environment (e.g. your local machine) and is not available on this cloud instance." : ""}
-                  className={`px-3 py-2 text-sm rounded transition-colors flex items-center justify-between group ${doc.unavailable
-                    ? 'text-zinc-600 cursor-not-allowed bg-zinc-950/30'
-                    : activeDocumentUrl === doc.url
-                      ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 cursor-pointer'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-transparent cursor-pointer'
+                  onClick={() => onSelectDocument?.(doc)}
+                  className={`px-3 py-2 text-sm rounded cursor-pointer truncate flex items-center gap-2 group transition-colors ${activeDocumentUrl === doc.url
+                    ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-transparent'
                     }`}
                 >
-                  <div className="flex items-center gap-2 truncate">
-                    <svg className={`w-3.5 h-3.5 flex-shrink-0 ${doc.unavailable ? 'text-zinc-600' : activeDocumentUrl === doc.url ? 'text-indigo-400' : 'text-red-500 opacity-70 group-hover:opacity-100'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      {doc.unavailable ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      )}
-                    </svg>
-                    <span className="truncate">{doc.name}</span>
-                  </div>
-                  {doc.unavailable && (
-                    <span className="text-[9px] uppercase font-bold tracking-tighter bg-zinc-800 px-1 rounded text-zinc-500 flex-shrink-0">Missing</span>
-                  )}
+                  <svg className={`w-3.5 h-3.5 ${activeDocumentUrl === doc.url ? 'text-indigo-400' : 'text-red-500 opacity-70 group-hover:opacity-100'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  {doc.name}
                 </div>
               ))}
             </div>

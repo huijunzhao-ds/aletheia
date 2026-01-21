@@ -29,8 +29,8 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
-  const [activeDocument, setActiveDocument] = useState<{ url: string, name: string, unavailable?: boolean } | null>(null);
-  const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string, unavailable?: boolean }[]>([]);
+  const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
+  const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -250,27 +250,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleReupload = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'application/pdf';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file && activeDocument) {
-        // Send to backend to persist it.
-        // We use a specific query to indicate it's a restoration
-        await handleSendMessage(`[File Restoration: ${file.name}]`, [file]);
-
-        // Update local state to mark as available
-        const url = URL.createObjectURL(file);
-        setActiveDocument({ ...activeDocument, url, unavailable: false });
-        setSessionDocuments(prev => prev.map(doc =>
-          doc.name === activeDocument.name ? { ...doc, url, unavailable: false } : doc
-        ));
-      }
-    };
-    input.click();
-  };
 
   if (loading) {
     return (
@@ -333,8 +312,7 @@ const App: React.FC = () => {
                   if (file.type === 'pdf') {
                     setActiveDocument({
                       url: file.path,
-                      name: file.name,
-                      unavailable: file.unavailable
+                      name: file.name
                     });
                   }
                 }}
@@ -347,8 +325,6 @@ const App: React.FC = () => {
                   url={activeDocument.url}
                   name={activeDocument.name}
                   onClose={() => setActiveDocument(null)}
-                  unavailable={activeDocument.unavailable}
-                  onReupload={handleReupload}
                 />
               </div>
             )}
