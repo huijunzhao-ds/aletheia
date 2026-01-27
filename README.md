@@ -156,19 +156,20 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - [x] Add session management and history 
     - [x] Enable side-by-side doc visualization and chat 
     - [x] Improve agent prompt and logic 
+
 - [ ] Update UI/UX (WIP)
     - [ ] Update research radar (WIP)
     - [ ] Update projects
     - [ ] Update deep research
   
-- [ ] Test and improve audio features
+- [ ] Test and improve audio features (WIP)
     - [ ] Add data collection for radar (WIP)
     - [ ] Add radar summary
     - [ ] Enhance audio generation
+    - [ ] Add proactive agent features
     
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
-- [ ] Add proactive agent features
 - [ ] Add personal knowledge and information sources
 - [ ] Add memory management and personalization
 
