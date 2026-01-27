@@ -151,13 +151,21 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
-- [ ] Test and improve chat features (WIP)
+- [x] Test and improve chat features 
     - [x] Improve input and output experience
     - [x] Add session management and history 
     - [x] Enable side-by-side doc visualization and chat 
-    - [ ] Improve agent prompt and logic (WIP)
+    - [x] Improve agent prompt and logic 
 - [ ] Update UI/UX (WIP)
+    - [ ] Update research radar (WIP)
+    - [ ] Update projects
+    - [ ] Update deep research
+  
 - [ ] Test and improve audio features
+    - [ ] Add data collection for radar (WIP)
+    - [ ] Add radar summary
+    - [ ] Enhance audio generation
+    
 - [ ] Test and improve presentation features
 - [ ] Test and improve video features
 - [ ] Add proactive agent features
