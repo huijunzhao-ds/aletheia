@@ -19,13 +19,23 @@ interface ResearchRadarProps {
     documents: { name: string, url: string }[];
     onSelectDocument: (doc: { url: string, name: string } | null) => void;
     activeDocumentUrl?: string;
+    onSelectRadar: (id: string) => void;
 }
 
 interface RadarItem {
     id: string;
     title: string;
     description: string;
-    source: string;
+    sources: string[];
+    frequency: string;
+    outputMedia: string;
+    customPrompt?: string;
+    arxivConfig?: {
+        categories: string[];
+        authors: string[];
+        keywords: string[];
+        journalReference?: string;
+    };
     lastUpdated: string;
     status: 'active' | 'paused';
 }
@@ -43,7 +53,8 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
     onSelectThread,
     documents,
     onSelectDocument,
-    activeDocumentUrl
+    activeDocumentUrl,
+    onSelectRadar
 }) => {
     // State for radars
     const [radars, setRadars] = useState<RadarItem[]>([]);
@@ -71,7 +82,11 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         id: item.id,
                         title: item.title,
                         description: item.description,
-                        source: Array.isArray(item.sources) ? item.sources.join(', ') : (item.source || ''),
+                        sources: item.sources || [],
+                        frequency: item.frequency || 'Daily',
+                        outputMedia: item.outputMedia || 'Text Digest',
+                        customPrompt: item.customPrompt || '',
+                        arxivConfig: item.arxivConfig,
                         lastUpdated: item.lastUpdated || 'Unknown',
                         status: item.status || 'active'
                     }));
@@ -88,6 +103,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
     }, []);
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [editingRadarId, setEditingRadarId] = useState<string | null>(null);
     const [isSourceDropdownOpen, setIsSourceDropdownOpen] = useState(false);
 
     // Config for Sources
@@ -136,12 +152,37 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
     }, []);
 
     const handleCreateRadar = () => {
+        setEditingRadarId(null);
+        setIsCreateModalOpen(true);
+    };
+
+    const handleEditRadar = (radar: RadarItem) => {
+        setEditingRadarId(radar.id);
+        setNewRadar({
+            title: radar.title,
+            description: radar.description,
+            sources: radar.sources,
+            frequency: radar.frequency,
+            outputMedia: radar.outputMedia,
+            customPrompt: radar.customPrompt || '',
+            arxivConfig: radar.arxivConfig ? {
+                categories: radar.arxivConfig.categories.join(', '),
+                authors: radar.arxivConfig.authors.join(', '),
+                keywords: radar.arxivConfig.keywords.join(', '),
+                journalReference: radar.arxivConfig.journalReference || ''
+            } : {
+                categories: '',
+                authors: '',
+                keywords: '',
+                journalReference: ''
+            }
+        });
         setIsCreateModalOpen(true);
     };
 
     const handleCloseModal = () => {
         setIsCreateModalOpen(false);
-        setIsSourceDropdownOpen(false);
+        setEditingRadarId(null);
         // Reset form
         setNewRadar({
             title: '',
@@ -181,8 +222,11 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                 } : null
             };
 
-            const response = await fetch('/api/radars', {
-                method: 'POST',
+            const url = editingRadarId ? `/api/radars/${editingRadarId}` : '/api/radars';
+            const method = editingRadarId ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
@@ -193,16 +237,33 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
             if (response.ok) {
                 const result = await response.json();
 
-                // Add new radar to local state (optimistic or using response data)
-                const radar: RadarItem = {
-                    id: result.id,
-                    title: newRadar.title,
-                    description: newRadar.description,
-                    source: newRadar.sources.join(', '),
-                    lastUpdated: 'Just now',
-                    status: 'active'
-                };
-                setRadars([...radars, radar]);
+                if (editingRadarId) {
+                    setRadars(prev => prev.map(r => r.id === editingRadarId ? {
+                        ...r,
+                        title: newRadar.title,
+                        description: newRadar.description,
+                        sources: newRadar.sources,
+                        frequency: newRadar.frequency,
+                        outputMedia: newRadar.outputMedia,
+                        customPrompt: newRadar.customPrompt,
+                        arxivConfig: payload.arxivConfig,
+                        lastUpdated: 'Just updated'
+                    } : r));
+                } else {
+                    const radar: RadarItem = {
+                        id: result.id,
+                        title: newRadar.title,
+                        description: newRadar.description,
+                        sources: newRadar.sources,
+                        frequency: newRadar.frequency,
+                        outputMedia: newRadar.outputMedia,
+                        customPrompt: newRadar.customPrompt,
+                        arxivConfig: payload.arxivConfig,
+                        lastUpdated: 'Just now',
+                        status: 'active'
+                    };
+                    setRadars([...radars, radar]);
+                }
                 handleCloseModal();
             } else {
                 console.error("Failed to save radar");
@@ -225,6 +286,33 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
 
     const removeSource = (source: string) => {
         setNewRadar(prev => ({ ...prev, sources: prev.sources.filter(s => s !== source) }));
+    };
+
+    const handleDeleteRadar = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!window.confirm('Are you sure you want to delete this radar?')) return;
+
+        try {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const token = await user.getIdToken();
+
+            const response = await fetch(`/api/radars/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                setRadars(prev => prev.filter(r => r.id !== id));
+            } else {
+                console.error("Failed to delete radar");
+            }
+        } catch (error) {
+            console.error("Error deleting radar:", error);
+        }
     };
 
     return (
@@ -309,8 +397,36 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         {radars.map((radar) => (
                             <div key={radar.id} className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 hover:border-zinc-700 transition-all shadow-lg backdrop-blur-sm group">
                                 <div className="flex justify-between items-start mb-4">
-                                    <h3 className="text-xl font-semibold text-white group-hover:text-blue-400 transition-colors">{radar.title}</h3>
-                                    <div className={`w-2 h-2 rounded-full ${radar.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                                    <h3
+                                        onClick={() => onSelectRadar(radar.id)}
+                                        className="text-xl font-semibold text-white group-hover:text-blue-400 transition-colors cursor-pointer"
+                                    >
+                                        {radar.title}
+                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleEditRadar(radar);
+                                            }}
+                                            className="text-zinc-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-zinc-800"
+                                            title="Edit Radar"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </button>
+                                        <button
+                                            onClick={(e) => handleDeleteRadar(e, radar.id)}
+                                            className="text-zinc-500 hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-500/10"
+                                            title="Delete Radar"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                        </button>
+                                        <div className={`w-2 h-2 rounded-full ${radar.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                                    </div>
                                 </div>
                                 <p className="text-zinc-400 text-sm mb-6 line-clamp-2">{radar.description}</p>
 
@@ -319,7 +435,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                         </svg>
-                                        <span>{radar.source}</span>
+                                        <span>{radar.sources.join(', ')}</span>
                                     </div>
                                     <span>{radar.lastUpdated}</span>
                                 </div>
@@ -333,7 +449,9 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
                         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-300 flex flex-col max-h-[90vh]">
                             <div className="flex justify-between items-center p-6 border-b border-zinc-800">
-                                <h3 className="text-xl font-semibold text-white">Create New Radar</h3>
+                                <h3 className="text-xl font-semibold text-white">
+                                    {editingRadarId ? 'Edit Radar' : 'Create New Radar'}
+                                </h3>
                                 <button onClick={handleCloseModal} className="text-zinc-400 hover:text-white transition-colors">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -566,11 +684,11 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                     onClick={handleSaveRadar}
                                     disabled={!newRadar.title || newRadar.sources.length === 0}
                                     className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${(!newRadar.title || newRadar.sources.length === 0)
-                                            ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                                            : 'bg-blue-600 hover:bg-blue-500 text-white'
+                                        ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                                        : 'bg-blue-600 hover:bg-blue-500 text-white'
                                         }`}
                                 >
-                                    Create Radar
+                                    {editingRadarId ? 'Save Changes' : 'Create Radar'}
                                 </button>
                             </div>
                         </div>

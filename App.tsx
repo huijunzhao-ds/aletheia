@@ -18,7 +18,7 @@ import { ComingSoon } from './components/ComingSoon';
 import { ResearchRadar } from './components/ResearchRadar';
 import { NavBar } from './components/NavBar';
 
-type ViewState = 'dashboard' | 'exploration' | 'radar' | 'projects';
+type ViewState = 'dashboard' | 'exploration' | 'radar' | 'projects' | 'radar-chat';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [currentStatus, setCurrentStatus] = useState<string>('');
   const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
   const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
+  const [selectedRadarId, setSelectedRadarId] = useState<string | null>(null);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -157,6 +158,11 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSelectRadar = (id: string) => {
+    setSelectedRadarId(id);
+    setCurrentView('radar-chat');
+  };
+
   const handleSendMessage = async (content: string, files: File[] = []) => {
     if ((!content.trim() && files.length === 0) || !user) return;
 
@@ -223,7 +229,8 @@ const App: React.FC = () => {
         body: JSON.stringify({
           query: content,
           sessionId: sessionId,
-          files: uploadedFiles
+          files: uploadedFiles,
+          radarId: currentView === 'radar-chat' ? selectedRadarId : null
         }),
       });
 
@@ -343,6 +350,7 @@ const App: React.FC = () => {
         documents={sessionDocuments}
         onSelectDocument={setActiveDocument}
         activeDocumentUrl={activeDocument?.url}
+        onSelectRadar={handleSelectRadar}
       />
     );
   }
@@ -370,7 +378,9 @@ const App: React.FC = () => {
     );
   }
 
-  // Exploration View (Sidebar + Chat)
+  // Exploration or Radar Chat View (Sidebar + Chat)
+  const isRadarChat = currentView === 'radar-chat';
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
       <Sidebar
@@ -382,9 +392,9 @@ const App: React.FC = () => {
         onNewConversation={resetSession}
         threads={threads}
         onSelectThread={handleSelectThread}
-        documents={sessionDocuments}
-        onSelectDocument={setActiveDocument}
-        activeDocumentUrl={activeDocument?.url}
+        documents={isRadarChat ? [] : sessionDocuments}
+        onSelectDocument={isRadarChat ? () => { } : setActiveDocument}
+        activeDocumentUrl={isRadarChat ? undefined : activeDocument?.url}
       />
       <main className="flex-1 flex overflow-hidden relative">
         {!isSidebarOpen && (
@@ -398,7 +408,7 @@ const App: React.FC = () => {
             </svg>
           </button>
         )}
-        {activeDocument && (
+        {!isRadarChat && activeDocument && (
           <div className="flex-1 h-full flex flex-col min-w-0">
             <DocumentViewer
               url={activeDocument.url}
@@ -407,7 +417,7 @@ const App: React.FC = () => {
             />
           </div>
         )}
-        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
+        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${(!isRadarChat && activeDocument) ? 'flex-1 min-w-0' : 'w-full'}`}>
           <div className="absolute top-4 right-4 z-50">
             <NavBar
               currentView={currentView}
@@ -423,7 +433,7 @@ const App: React.FC = () => {
             isProcessing={isProcessing}
             currentStatus={currentStatus}
             onFileClick={(file) => {
-              if (file.type === 'pdf') {
+              if (file.type === 'pdf' && !isRadarChat) {
                 setActiveDocument({
                   url: file.path,
                   name: file.name

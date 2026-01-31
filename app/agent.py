@@ -10,7 +10,10 @@ from app.tools import (
     scrape_website,
     generate_audio_summary, 
     generate_presentation_file, 
-    generate_video_lecture_file
+    generate_video_lecture_file,
+    list_radars,
+    get_radar_details,
+    save_radar_results
 )
 
 # Configure logging
@@ -32,18 +35,13 @@ search_agent = Agent(
     
     Your goal is to provide a "deep research" standard of information, not just surface coverage.
     
-    EVALUATION CRITERIA:
-    1. **Content Timeliness**: Ensure you find the latest developments, industry trends, and application cases.
-    2. **Knowledge Extension**: Connect basic knowledge boundaries to cutting-edge research and real-time background.
-    3. **Research Completeness**: Form a complete knowledge chain from fundamentals to latest theoretical advances.
-    
     GUIDELINES:
     - Use `web_search` for real-time information, industry cases, and current application status.
     - Use `search_arxiv` for cutting-edge academic research and theoretical advances.
-    - **Depth over Breadth**: When investigating a topic, ensure you cover Concept Definition, Core Principles, Key Formulas/Algorithms (if applicable), Application Scenarios, and Limitations.
-    
-    Provide a comprehensive, well-structured summary of your findings that meets these deep research standards.""",
-    tools=[web_search, search_arxiv],
+    - Use `scrape_website` to extract full content when useful.
+    - **Depth over Breadth**: Cover Concept Definition, Core Principles, Key Formulas/Algorithms (if applicable), Application Scenarios, and Limitations.
+    """,
+    tools=[web_search, search_arxiv, scrape_website],
 )
 
 # 2. Audio Content Creator
@@ -76,54 +74,70 @@ video_agent = Agent(
     tools=[generate_video_lecture_file],
 )
 
-# 5. Data Collection / Research Radar Agent
-data_collection_agent = Agent(
-    name="data_collection_specialist",
+# 5. Research Radar Specialist
+research_radar_agent = Agent(
+    name="research_radar_specialist",
     model=Gemini(model="gemini-2.5-flash", api_key=api_key),
-    instruction="""You are a Data Collection Specialist (Research Radar).
+    instruction="""You are the Research Radar Specialist. 
+    Your domain is managing and executing user-defined research radars.
     
-    Your goal is to collect research articles, postings, and updates from various sources including:
-    - Arxiv (via `search_arxiv`)
-    - Tech Blogs, Medium, News Sites (via `web_search` to find links, then `scrape_website` to read content)
-    - Social Media discussions (via `web_search`)
+    CAPABILITIES:
+    - Use `list_radars` to see all topics the user is tracking.
+    - Use `get_radar_details` to get the specific Arxiv filters, keywords, and custom prompts for a radar.
+    - Use `search_arxiv`, `web_search`, and `scrape_website` to collect the latest information.
+    - Use `save_radar_results` to store summaries or findings back to the radar history.
     
-    FREQUENCY & MONITORING:
-    - If the user specifies a frequency (e.g., "daily", "weekly"), acknowledge this request.
-    - Organize your findings into a clear 'Research Radar' report.
-    - Categorize items by source type (Academic, Industry Blog, Social Media, etc.).
-    
-    When collecting data:
-    1. Search for the latest content matching the user's topic.
-    2. Filter for high-quality, relevant items.
-    3. Use `scrape_website` to get details if the summary is insufficient.
-    4. Compile the report with titles, summaries, and source URLs.
+    GUIDELINES:
+    1. If the user asks for a report on a radar, fetch its details first.
+    2. Respect the 'Arxiv Configuration' (categories, authors) and 'Custom Prompt' instructions found in the radar settings.
+    3. Return a comprehensive summary of findings. Your task is to gather and synthesize; the coordinator will handle specific media conversions (Audio, PPT) if requested.
+    """,
+    tools=[list_radars, get_radar_details, save_radar_results, web_search, search_arxiv, scrape_website],
+)
+
+# 6. Exploration Specialist
+exploration_agent = Agent(
+    name="exploration_specialist",
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
+    instruction="""You are an Exploration & Discovery Expert.
+    Your goal is to help users browse and discover new research trends.
+    (Note: This module is under development. For now, provide helpful search summaries).
     """,
     tools=[web_search, search_arxiv, scrape_website],
+)
+
+# 7. Project Specialist
+project_agent = Agent(
+    name="project_specialist",
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
+    instruction="""You are a Project Management Assistant.
+    Your goal is to organize research artifacts, papers, and summaries into projects.
+    (Note: This module is under development).
+    """,
+    tools=[],
 )
 
 # Root Router Agent
 root_agent = Agent(
     name="aletheia_router",
     model=Gemini(model="gemini-2.5-flash", api_key=api_key),
-    instruction="""You are the Main Coordinator of Aletheia, a multimedia research assistant.
-    Your job is to understand the user's request and delegate to the appropriate specialist.
+    instruction="""You are the Main Coordinator of Aletheia, a multimedia research intelligence system.
+    Your job is to understand the user's intent and delegate to the right specialist based on the current view or request.
     
     SPECIALISTS:
-    1. `search_specialist`: Use this for deep research and information gathering.
-    2. `data_collection_specialist`: Use this for "Research Radar" tasks, collecting articles/feed updates, or monitoring specific sources (Arxiv, blogs, etc.) over time.
-    3. `audio_specialist`: Use this when the user explicitly asks for audio, MP3, or a "podcast".
-    4. `presentation_specialist`: Use this when the user asks for slides, PPTX, or a presentation.
-    5. `video_specialist`: Use this when the user asks for a video or MP4.
+    1. `research_radar_specialist`: Use this for ANYTHING related to "Research Radar", managing radars, or running configured research feeds.
+    2. `exploration_specialist`: Use this for general browsing, discovery, and surface-level research.
+    3. `search_specialist`: Use this for "Deep Research" requests that require intense, multi-source investigation.
+    4. `project_specialist`: Use this for managing research artifacts, files, and project organization.
     
     DELEGATION STRATEGY:
-    - For initial research -> Delegate to `search_specialist`.
-    - For "updates", "feeds", "collection", or "radar" requests -> Delegate to `data_collection_specialist`.
-    - For creating specific multimedia output -> Delegate to the corresponding specialist.
-    - If a user asks to "collect X and make a video", first collect data, then pass results to the video specialist.
+    - If the user is in the 'Radar' view (CONTEXT) or asks about radars -> Delegate to `research_radar_specialist`.
+    - If the user asks for a "Deep Search" or detailed technical investigation -> `search_specialist`.
+    - Format conversion (Audio, PPT, Video): After a specialist provides research information, you may further delegate to `audio_specialist`, `presentation_specialist`, or `video_specialist` if the user's radar settings or message specify those formats.
     
-    Always provide a helpful final response to the user, including links to any generated files.
+    Always provide a helpful and encouraging final response, ensuring links to any generated files are included.
     """,
-    sub_agents=[search_agent, data_collection_agent, audio_agent, presentation_agent, video_agent],
+    sub_agents=[research_radar_agent, exploration_agent, search_agent, project_agent, audio_agent, presentation_agent, video_agent],
 )
 
 app = App(root_agent=root_agent, name="Aletheia")

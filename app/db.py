@@ -12,7 +12,16 @@ class UserDataService:
     def __init__(self):
         try:
             database_id = os.getenv("FIREBASE_DATABASE_ID", "(default)")
-            self.db = firestore.AsyncClient(database=database_id)
+            project_id = os.getenv("VITE_FIREBASE_PROJECT_ID")
+            
+            key_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "gcp-sa-key.json")
+            if os.path.exists(key_path):
+                self.db = firestore.AsyncClient(database=database_id, project=project_id, credentials=None) # credentials=None will check GOOGLE_APPLICATION_CREDENTIALS
+                # Actually, better to use from_service_account_json
+                self.db = firestore.AsyncClient.from_service_account_json(key_path, database=database_id)
+                logger.info(f"Initialized Firestore Client using {key_path}")
+            else:
+                self.db = firestore.AsyncClient(database=database_id, project=project_id)
         except Exception as e:
             logger.error(f"Failed to initialize Firestore Client: {e}")
             self.db = None
@@ -52,6 +61,12 @@ class UserDataService:
     async def get_radar_items(self, user_id: str):
         docs = self.get_radar_collection(user_id).stream()
         return [doc.to_dict() async for doc in docs]
+
+    async def update_radar_item(self, user_id: str, radar_id: str, item_data: Dict[str, Any]):
+        return await self.get_radar_collection(user_id).document(radar_id).update(item_data)
+
+    async def delete_radar_item(self, user_id: str, radar_id: str):
+        return await self.get_radar_collection(user_id).document(radar_id).delete()
 
     # --- Exploration ---
     def get_exploration_collection(self, user_id: str):

@@ -25,6 +25,7 @@ class ResearchRequest(BaseModel):
     query: str
     files: List[dict] = []
     sessionId: Optional[str] = None
+    radarId: Optional[str] = None
 
 class ResearchResponse(BaseModel):
     content: str

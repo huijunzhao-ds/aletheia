@@ -27,6 +27,7 @@ from app.agent import app as adk_app
 from app.schemas import ResearchRequest, ResearchResponse, FileItem
 from app.auth import get_current_user
 from app.sessions import get_session_service
+from app.tools import current_user_id
 
 # Initialize session service
 session_service = get_session_service()
@@ -54,6 +55,9 @@ app.add_middleware(
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get_current_user)):
+    # Set context for tools
+    current_user_id.set(user_id)
+    
     logger.info(f"Received research request from {user_id}: {request.query}")
     try:
         runner = Runner(app=adk_app, session_service=session_service)
@@ -93,7 +97,29 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             logger.exception(f"Error setting session title for session: {session_id}")
 
         # Construct content object and persist files for history
-        parts = [types.Part(text=request.query)]
+        query_text = request.query
+        
+        # If radarId is provided, fetch radar config and prepend as context
+        if request.radarId:
+            from app.db import user_data_service
+            try:
+                radar_doc = await user_data_service.get_radar_collection(user_id).document(request.radarId).get()
+                if radar_doc.exists:
+                    radar_data = radar_doc.to_dict()
+                    context = f"CONTEXT: User is currently viewing the Research Radar titled '{radar_data.get('title')}'.\n"
+                    context += f"Description: {radar_data.get('description')}\n"
+                    context += f"Sources: {', '.join(radar_data.get('sources', []))}\n"
+                    if radar_data.get('arxivConfig'):
+                        context += f"Arxiv Config: {radar_data.get('arxivConfig')}\n"
+                    if radar_data.get('customPrompt'):
+                        context += f"Custom Instructions: {radar_data.get('customPrompt')}\n"
+                    context += f"\nUser Query: {request.query}"
+                    query_text = context
+                    logger.info(f"Injected radar context for {request.radarId}")
+            except Exception as e:
+                logger.error(f"Error fetching radar context: {e}")
+
+        parts = [types.Part(text=query_text)]
         uploaded_doc_metadata = []
         
         for f in request.files:
@@ -268,19 +294,6 @@ async def create_radar(radar: RadarCreate, user_id: str = Depends(get_current_us
 async def get_radars(user_id: str = Depends(get_current_user)):
     from app.db import user_data_service
     try:
-        items = await user_data_service.get_radar_items(user_id)
-        # Transform for frontend if needed, currently just passing through dicts with Ids
-        # The schema RadarItemResponse expects id, but firestore to_dict doesn't include it by default unless we merge it
-        # Let's adjust db.py to include ID or do it here. 
-        # Standardize: we need the doc ID.
-        
-        # Actually user_data_service.get_radar_items returns dicts. 
-        # We need to fetch the ID. Let's fix db.py first or iterate manually here.
-        
-        # Let's assume we modify db.py to return (id, data) or list of dicts with id.
-        # But 'get_radar_items' currently returns list of dicts.
-        # It's better to fetch docs and construct response.
-        
         docs = user_data_service.get_radar_collection(user_id).stream()
         results = []
         async for doc in docs:
@@ -292,6 +305,34 @@ async def get_radars(user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching radars: {e}")
         return []
+
+@app.put("/api/radars/{radar_id}", response_model=Dict[str, str])
+async def update_radar(radar_id: str, radar: RadarCreate, user_id: str = Depends(get_current_user)):
+    logger.info(f"Updating radar {radar_id} for user {user_id}")
+    from app.db import user_data_service
+    try:
+        if radar.frequency not in ["Daily", "Weekly"]:
+            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily' or 'Weekly'.")
+
+        data = radar.model_dump()
+        data["lastUpdated"] = "Just updated"
+        
+        await user_data_service.update_radar_item(user_id, radar_id, data)
+        return {"message": "Radar updated successfully"}
+    except Exception as e:
+        logger.error(f"Error updating radar: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/radars/{radar_id}", response_model=Dict[str, str])
+async def delete_radar(radar_id: str, user_id: str = Depends(get_current_user)):
+    logger.info(f"Deleting radar {radar_id} for user {user_id}")
+    from app.db import user_data_service
+    try:
+        await user_data_service.delete_radar_item(user_id, radar_id)
+        return {"message": "Radar deleted successfully"}
+    except Exception as e:
+        logger.error(f"Error deleting radar: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):

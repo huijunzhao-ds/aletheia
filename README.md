@@ -159,7 +159,7 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 - [ ] Update UI/UX (WIP)
     - [x] Redesign UI
-    - [ ] Update research radar (WIP)
+    - [x] Update research radar (WIP)
     - [ ] Update exploration
     - [ ] Update projects
     
