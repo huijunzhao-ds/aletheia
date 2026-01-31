@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
+import { Dashboard } from './components/Dashboard';
 import { Message } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from './firebaseConfig';
@@ -13,9 +14,15 @@ import {
 } from "firebase/auth";
 import { DocumentViewer } from './components/DocumentViewer';
 
+import { ComingSoon } from './components/ComingSoon';
+import { NavBar } from './components/NavBar';
+
+type ViewState = 'dashboard' | 'exploration' | 'radar' | 'projects';
+
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [sessionId, setSessionId] = useState<string>(uuidv4());
   const [threads, setThreads] = useState<{ id: string, title: string }[]>([]);
   const [messages, setMessages] = useState<Message[]>([
@@ -66,6 +73,10 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+      // Reset view to dashboard on login
+      if (currentUser) {
+        setCurrentView('dashboard');
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -259,106 +270,151 @@ const App: React.FC = () => {
     );
   }
 
+  // Login View
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-full min-h-screen bg-[#0a0a14] text-white p-4 relative overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0a0a14] to-[#0a0a14]"></div>
+
+        <div className="max-w-md text-center space-y-8 relative z-10">
+          <div className="space-y-4">
+            <p className="text-zinc-300 text-lg font-normal tracking-wide">
+              Live Research Intelligence System
+            </p>
+            <h1 className="text-6xl md:text-7xl font-medium italic bg-gradient-to-br from-blue-300 via-blue-500 to-blue-600 bg-clip-text text-transparent pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>
+              Aletheia
+            </h1>
+          </div>
+          <div className="pt-4">
+            <button
+              onClick={handleGoogleSignIn}
+              className="px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 mx-auto"
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+              Sign in with Google
+            </button>
+          </div>
+          <p className="text-zinc-500 text-sm mt-8 font-normal tracking-wide opacity-80">
+            Limited spots available. No credit card required.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Dashboard View
+  if (currentView === 'dashboard') {
+    return (
+      <Dashboard
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user.photoURL}
+        userName={user.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        onNewConversation={resetSession}
+        threads={threads}
+        onSelectThread={handleSelectThread}
+        documents={sessionDocuments}
+        onSelectDocument={setActiveDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+    );
+  }
+
+  // Coming Soon Views
+  if (currentView === 'radar' || currentView === 'projects') {
+    return (
+      <ComingSoon
+        title={currentView === 'radar' ? 'Research Radar' : 'Project Management'}
+        description={
+          currentView === 'radar'
+            ? "Research Radar will allow you to track real-time updates from Arxiv, Tech Blogs, and Social Media. We are currently finalizing the data ingestion pipelines."
+            : "Project Management will enable you to organize your research threads, save artifacts, and collaborate with teams. This feature is in active development."
+        }
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user.photoURL}
+        userName={user.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        onNewConversation={resetSession}
+        threads={threads}
+        onSelectThread={handleSelectThread}
+        documents={sessionDocuments}
+        onSelectDocument={setActiveDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+    );
+  }
+
+  // Exploration View (Sidebar + Chat)
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
-      {user ? (
-        <>
-          <Sidebar
-            isOpen={isSidebarOpen}
-            onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-            messages={messages}
-            userName={user.displayName}
-            userPhoto={user.photoURL}
-            onNewConversation={resetSession}
-            threads={threads}
-            onSelectThread={handleSelectThread}
-            documents={sessionDocuments}
-            onSelectDocument={setActiveDocument}
-            activeDocumentUrl={activeDocument?.url}
-          />
-          <main className="flex-1 flex overflow-hidden relative">
-            {!isSidebarOpen && (
-              <button
-                onClick={() => setIsSidebarOpen(true)}
-                className="absolute top-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
-                title="Show Sidebar"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
-            {activeDocument && (
-              <div className="flex-1 h-full flex flex-col min-w-0">
-                <DocumentViewer
-                  url={activeDocument.url}
-                  name={activeDocument.name}
-                  onClose={() => setActiveDocument(null)}
-                />
-              </div>
-            )}
-            <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
-              <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
-                  {user.photoURL && (
-                    <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full border border-zinc-700" />
-                  )}
-                  <span className="text-zinc-300 text-xs font-medium">{user.displayName}</span>
-                </div>
-                <button
-                  onClick={handleSignOut}
-                  className="px-4 py-1.5 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
-                >
-                  Sign Out
-                </button>
-              </div>
-              <ChatArea
-                messages={messages}
-                onSendMessage={handleSendMessage}
-                isProcessing={isProcessing}
-                currentStatus={currentStatus}
-                onFileClick={(file) => {
-                  if (file.type === 'pdf') {
-                    setActiveDocument({
-                      url: file.path,
-                      name: file.name
-                    });
-                  }
-                }}
-                userPhoto={user.photoURL}
-              />
-            </div>
-          </main>
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-[#0a0a14] text-white p-4 relative overflow-hidden">
-          {/* Background effects */}
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0a0a14] to-[#0a0a14]"></div>
-
-          <div className="max-w-md text-center space-y-8 relative z-10">
-            <div className="space-y-4">
-              <p className="text-zinc-300 text-lg font-normal tracking-wide">
-                Live Research Intelligence System
-              </p>
-              <h1 className="text-6xl md:text-7xl font-medium italic bg-gradient-to-br from-blue-300 via-blue-500 to-blue-600 bg-clip-text text-transparent pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>
-                Aletheia
-              </h1>
-            </div>
-            <div className="pt-4">
-              <button
-                onClick={handleGoogleSignIn}
-                className="px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 mx-auto"
-              >
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-                Sign in with Google
-              </button>
-            </div>
-            <p className="text-zinc-500 text-sm mt-8 font-normal tracking-wide opacity-80">
-              Limited spots available. No credit card required.
-            </p>
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        userName={user.displayName}
+        userPhoto={user.photoURL}
+        onNewConversation={resetSession}
+        threads={threads}
+        onSelectThread={handleSelectThread}
+        documents={sessionDocuments}
+        onSelectDocument={setActiveDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+      <main className="flex-1 flex overflow-hidden relative">
+        {!isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
+            title="Show Sidebar"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+        {activeDocument && (
+          <div className="flex-1 h-full flex flex-col min-w-0">
+            <DocumentViewer
+              url={activeDocument.url}
+              name={activeDocument.name}
+              onClose={() => setActiveDocument(null)}
+            />
           </div>
+        )}
+        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${activeDocument ? 'flex-1 min-w-0' : 'w-full'}`}>
+          <div className="absolute top-4 right-4 z-50">
+            <NavBar
+              currentView={currentView}
+              onNavigate={(view: string) => setCurrentView(view as ViewState)}
+              userPhoto={user.photoURL}
+              userName={user.displayName}
+              onSignOut={handleSignOut}
+            />
+          </div>
+          <ChatArea
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            isProcessing={isProcessing}
+            currentStatus={currentStatus}
+            onFileClick={(file) => {
+              if (file.type === 'pdf') {
+                setActiveDocument({
+                  url: file.path,
+                  name: file.name
+                });
+              }
+            }}
+            userPhoto={user.photoURL}
+          />
         </div>
-      )}
+      </main>
     </div>
   );
 };
