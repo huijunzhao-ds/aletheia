@@ -116,3 +116,42 @@ def generate_video_lecture_file(title: str, slides: List[Dict[str, str]]) -> str
     """
     from app.multimodal import generate_video_lecture
     return generate_video_lecture(title, slides)
+
+def scrape_website(url: str) -> str:
+    """
+    Fetches and extracts text content from a given URL.
+    Use this to collect articles, blog posts, or documentation.
+    
+    Args:
+        url: The URL to scrape.
+        
+    Returns:
+        The text content of the website.
+    """
+    import httpx
+    import re
+    
+    try:
+        # User defined headers to mimic a browser
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        with httpx.Client(follow_redirects=True, timeout=30.0) as client:
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            
+            # Simple text extraction (stripping HTML tags)
+            # In a real app, use BeautifulSoup
+            html = response.text
+            # Remove scripts and styles
+            html = re.sub(r'<script.*?>.*?</script>', '', html, flags=re.DOTALL)
+            html = re.sub(r'<style.*?>.*?</style>', '', html, flags=re.DOTALL)
+            # Remove tags
+            text = re.sub(r'<[^>]+>', ' ', html)
+            # Normalize whitespace
+            text = ' '.join(text.split())
+            
+            return text[:20000] # Limit content size
+    except Exception as e:
+        logger.error(f"Error scraping {url}: {e}")
+        return f"Failed to read content from {url}: {e}"
