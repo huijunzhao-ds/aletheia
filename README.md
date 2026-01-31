@@ -158,9 +158,11 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - [x] Improve agent prompt and logic 
 
 - [ ] Update UI/UX (WIP)
+    - [x] Redesign UI
     - [ ] Update research radar (WIP)
+    - [ ] Update exploration
     - [ ] Update projects
-    - [ ] Update deep research
+    
   
 - [ ] Test and improve audio features (WIP)
     - [ ] Add data collection for radar (WIP)

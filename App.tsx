@@ -15,6 +15,7 @@ import {
 import { DocumentViewer } from './components/DocumentViewer';
 
 import { ComingSoon } from './components/ComingSoon';
+import { ResearchRadar } from './components/ResearchRadar';
 import { NavBar } from './components/NavBar';
 
 type ViewState = 'dashboard' | 'exploration' | 'radar' | 'projects';
@@ -324,16 +325,34 @@ const App: React.FC = () => {
     );
   }
 
-  // Coming Soon Views
-  if (currentView === 'radar' || currentView === 'projects') {
+
+  // Research Radar View
+  if (currentView === 'radar') {
+    return (
+      <ResearchRadar
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user.photoURL}
+        userName={user.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        onNewConversation={resetSession}
+        threads={threads}
+        onSelectThread={handleSelectThread}
+        documents={sessionDocuments}
+        onSelectDocument={setActiveDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+    );
+  }
+
+  // Coming Soon Views (Projects)
+  if (currentView === 'projects') {
     return (
       <ComingSoon
-        title={currentView === 'radar' ? 'Research Radar' : 'Project Management'}
-        description={
-          currentView === 'radar'
-            ? "Research Radar will allow you to track real-time updates from Arxiv, Tech Blogs, and Social Media. We are currently finalizing the data ingestion pipelines."
-            : "Project Management will enable you to organize your research threads, save artifacts, and collaborate with teams. This feature is in active development."
-        }
+        title='Project Management'
+        description="Project Management will enable you to organize your research threads, save artifacts, and collaborate with teams. This feature is in active development."
         onNavigate={(view: string) => setCurrentView(view as ViewState)}
         userPhoto={user.photoURL}
         userName={user.displayName}

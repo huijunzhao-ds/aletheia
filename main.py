@@ -1,4 +1,5 @@
 import os
+from typing import Dict, List, Optional
 import logging
 import uuid
 import base64
@@ -224,6 +225,73 @@ async def get_user_threads(user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching threads: {e}")
         return {"threads": []}
+
+@app.post("/api/user/init")
+async def init_user_data(user_id: str = Depends(get_current_user)):
+    """
+    Initializes the user's data structures in Firestore (Radar, Exploration, Projects).
+    """
+    from app.db import user_data_service
+    try:
+        await user_data_service.initialize_user_collections(user_id)
+        return {"status": "success", "message": f"User {user_id} initialized."}
+    except Exception as e:
+        logger.error(f"Error initializing user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to initialize user data")
+
+from app.schemas import RadarCreate, RadarItemResponse
+
+@app.post("/api/radars", response_model=Dict[str, str])
+async def create_radar(radar: RadarCreate, user_id: str = Depends(get_current_user)):
+    logger.info(f"Creating radar for users {user_id}: {radar.title}")
+    from app.db import user_data_service
+    try:
+        # Validate frequency
+        if radar.frequency not in ["Daily", "Weekly"]:
+            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily' or 'Weekly'.")
+
+        data = radar.model_dump()
+        data["created_at"] = datetime.datetime.now(datetime.timezone.utc)
+        data["lastUpdated"] = "Never"
+        data["status"] = "active"
+        
+        # Add to Firestore
+        update_time, doc_ref = await user_data_service.add_radar_item(user_id, data)
+        return {"id": doc_ref.id, "message": "Radar created successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating radar: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/radars")
+async def get_radars(user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        items = await user_data_service.get_radar_items(user_id)
+        # Transform for frontend if needed, currently just passing through dicts with Ids
+        # The schema RadarItemResponse expects id, but firestore to_dict doesn't include it by default unless we merge it
+        # Let's adjust db.py to include ID or do it here. 
+        # Standardize: we need the doc ID.
+        
+        # Actually user_data_service.get_radar_items returns dicts. 
+        # We need to fetch the ID. Let's fix db.py first or iterate manually here.
+        
+        # Let's assume we modify db.py to return (id, data) or list of dicts with id.
+        # But 'get_radar_items' currently returns list of dicts.
+        # It's better to fetch docs and construct response.
+        
+        docs = user_data_service.get_radar_collection(user_id).stream()
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            # Ensure fields exist
+            results.append(d)
+        return results
+    except Exception as e:
+        logger.error(f"Error fetching radars: {e}")
+        return []
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):
