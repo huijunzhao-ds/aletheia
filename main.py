@@ -369,42 +369,70 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         
         radar_data = radar_doc.to_dict()
         
-        # 2. Prepare synthetic request for the agent
-        query = f"Please perform a proactive sweep of the latest information for my Research Radar titled '{radar_data.get('title')}'. "
-        query += f"Use the Arxiv filters: {radar_data.get('arxivConfig')} and other sources: {radar_data.get('sources')}. "
-        query += "Provide a concise summary of the most important 3-5 updates from the last 24-48 hours."
-        
-        # 2. Immediately create simulated captured items (Papers) for the UI demo
-        # This ensures the user sees results quickly while the agent works in the background
-        paper_titles = [
-            "LLM reasoning: A New Architecture",
-            "Scalable Multi-Agent Systems",
-            "Zero-Shot Information Extraction",
-            "Deep Learning on Arxiv Graphs",
-            "The Impact of Generative AI",
-            "Memory-Augmented Language Models",
-            "Bridging Logic and Learning",
-            "Unified Knowledge Discovery"
-        ]
+        # 2. Get real papers from Arxiv
+        from app.tools import search_arxiv
         import datetime
-        import random
-        now = datetime.datetime.now(datetime.timezone.utc)
         
-        inc = random.randint(3, 5)
-        for i in range(inc):
-            title = random.choice(paper_titles)
-            paper_titles.remove(title)
-            item_data = {
-                "title": title,
-                "summary": f"Initial analysis for {radar_data.get('title')}. This research explores efficiency and scaling laws.",
-                "url": "https://arxiv.org/abs/" + str(random.randint(2300, 2400)) + "." + str(random.randint(10000, 20000)),
-                "authors": ["Elena Chen", "Marcus Thorne"],
-                "timestamp": now - datetime.timedelta(hours=random.randint(1, 48)),
-                "type": "Arxiv"
-            }
-            await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
+        arxiv_config = radar_data.get('arxivConfig') or {}
+        search_query = ""
+        
+        # Build search query from config
+        terms = []
+        if arxiv_config.get('categories'):
+            categories = arxiv_config.get('categories')
+            if isinstance(categories, list):
+                cat_part = " OR ".join([f"cat:{c}" for c in categories])
+                terms.append(f"({cat_part})")
+        
+        if arxiv_config.get('keywords'):
+            keywords = arxiv_config.get('keywords')
+            if isinstance(keywords, list):
+                kw_part = " OR ".join([f"all:{k}" for k in keywords])
+                terms.append(f"({kw_part})")
+        
+        if terms:
+            search_query = " AND ".join(terms)
+        else:
+            search_query = radar_data.get('title')
 
-        # 3. Call Agent (Internal Runner) - This happens in background while user sees simulated items
+        logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query}")
+        real_papers = search_arxiv(query=search_query, max_results=6, sort_by_date=True)
+        
+        if real_papers:
+            count = 0
+            for paper in real_papers:
+                # Firestore likes datetime objects
+                try:
+                    pub_date = datetime.datetime.strptime(paper["published"], "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+                except:
+                    pub_date = datetime.datetime.now(datetime.timezone.utc)
+
+                item_data = {
+                    "title": paper["title"],
+                    "summary": paper["summary"][:1000] if paper.get("summary") else "No summary available.",
+                    "url": paper["pdf_url"],
+                    "authors": paper["authors"][:5], # Limit authors for UI
+                    "timestamp": pub_date,
+                    "type": "Arxiv",
+                    "tags": arxiv_config.get('keywords', [])[:3]
+                }
+                await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
+                count += 1
+            
+            logger.info(f"Captured {count} real papers for radar {radar_id}")
+            # Update counts in radar document
+            await user_data_service.save_radar_summary(user_id, radar_id, "", captured_inc=count)
+        else:
+            logger.info(f"No papers found for radar {radar_id}")
+
+        # 3. Call Agent (Internal Runner)
+        query = f"Please perform a research briefing for my Radar titled '{radar_data.get('title')}'. "
+        if real_papers:
+            query += f"I have already captured {len(real_papers)} papers for this sweep. "
+            query += "Synthesize the findings of these papers and other relevant news into a concise briefing."
+        else:
+            query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates."
+            
         job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
         await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name)
         
@@ -488,6 +516,24 @@ async def get_radar_items(radar_id: str, user_id: str = Depends(get_current_user
     items = await user_data_service.get_radar_captured_items(user_id, radar_id)
     logger.info(f"Fetched {len(items)} items for radar {radar_id} and user {user_id}")
     return items
+
+@app.delete("/api/radars/{radar_id}/items/{item_id}")
+async def delete_radar_item(radar_id: str, item_id: str, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    await user_data_service.delete_radar_captured_item(user_id, radar_id, item_id)
+    return {"status": "success"}
+
+@app.post("/api/exploration/save")
+async def save_to_exploration(item: dict, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        # We can reuse the project/exploration pattern
+        # The frontend sends the whole paper object
+        await user_data_service.add_exploration_item(user_id, item)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error saving to exploration: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):

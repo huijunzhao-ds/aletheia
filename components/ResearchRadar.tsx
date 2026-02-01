@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { Sidebar } from './Sidebar';
 import { NavBar } from './NavBar';
-import { Message } from '../types';
+import { Message, RadarItem } from '../types';
 
 interface ResearchRadarProps {
     onNavigate: (view: string) => void;
@@ -19,29 +19,7 @@ interface ResearchRadarProps {
     documents: { name: string, url: string }[];
     onSelectDocument: (doc: { url: string, name: string } | null) => void;
     activeDocumentUrl?: string;
-    onSelectRadar: (id: string) => void;
-}
-
-interface RadarItem {
-    id: string;
-    title: string;
-    description: string;
-    sources: string[];
-    frequency: string;
-    outputMedia: string;
-    customPrompt?: string;
-    arxivConfig?: {
-        categories: string[];
-        authors: string[];
-        keywords: string[];
-        journalReference?: string;
-    };
-    lastUpdated: string;
-    status: 'active' | 'paused';
-    latestSummary?: string;
-    isStarred: boolean;
-    capturedCount: number;
-    unreadCount: number;
+    onSelectRadar: (radar: RadarItem) => void;
 }
 
 export const ResearchRadar: React.FC<ResearchRadarProps> = ({
@@ -485,7 +463,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                 {!isSidebarOpen && (
                     <button
                         onClick={onToggleSidebar}
-                        className="absolute top-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
+                        className="absolute bottom-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
                         title="Show Sidebar"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -566,7 +544,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                 key={radar.id}
                                 onClick={() => {
                                     handleMarkRead(radar.id);
-                                    onSelectRadar(radar.id);
+                                    onSelectRadar(radar);
                                 }}
                                 className="bg-[#1a1b2e]/80 border border-zinc-800/50 rounded-[24px] p-7 pt-6 hover:bg-[#1a1b2e] hover:border-zinc-700/50 transition-all shadow-2xl backdrop-blur-md group relative overflow-hidden flex flex-col min-h-[340px]"
                             >

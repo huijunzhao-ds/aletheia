@@ -16,7 +16,7 @@ export const NavBar: React.FC<NavBarProps> = ({ currentView, onNavigate, userPho
                     onClick={() => onNavigate('dashboard')}
                     className="px-3 py-1.5 text-zinc-400 hover:text-white text-xs font-medium rounded-lg transition-colors hover:bg-zinc-800"
                 >
-                    Back to Dashboard
+                    Dashboard
                 </button>
 
                 <div className="w-px h-4 bg-zinc-800 mx-1"></div>
@@ -24,8 +24,8 @@ export const NavBar: React.FC<NavBarProps> = ({ currentView, onNavigate, userPho
                 <button
                     onClick={() => onNavigate('radar')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${currentView === 'radar'
-                            ? 'bg-zinc-800 text-blue-400 shadow-sm ring-1 ring-zinc-700'
-                            : 'text-zinc-400 hover:text-blue-300 hover:bg-zinc-800/50'
+                        ? 'bg-zinc-800 text-blue-400 shadow-sm ring-1 ring-zinc-700'
+                        : 'text-zinc-400 hover:text-blue-300 hover:bg-zinc-800/50'
                         }`}
                     title="Research Radar"
                 >
@@ -38,8 +38,8 @@ export const NavBar: React.FC<NavBarProps> = ({ currentView, onNavigate, userPho
                 <button
                     onClick={() => onNavigate('exploration')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${currentView === 'exploration'
-                            ? 'bg-zinc-800 text-purple-400 shadow-sm ring-1 ring-zinc-700'
-                            : 'text-zinc-400 hover:text-purple-300 hover:bg-zinc-800/50'
+                        ? 'bg-zinc-800 text-purple-400 shadow-sm ring-1 ring-zinc-700'
+                        : 'text-zinc-400 hover:text-purple-300 hover:bg-zinc-800/50'
                         }`}
                     title="Exploration"
                 >
@@ -52,8 +52,8 @@ export const NavBar: React.FC<NavBarProps> = ({ currentView, onNavigate, userPho
                 <button
                     onClick={() => onNavigate('projects')}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-xs font-medium ${currentView === 'projects'
-                            ? 'bg-zinc-800 text-green-400 shadow-sm ring-1 ring-zinc-700'
-                            : 'text-zinc-400 hover:text-green-300 hover:bg-zinc-800/50'
+                        ? 'bg-zinc-800 text-green-400 shadow-sm ring-1 ring-zinc-700'
+                        : 'text-zinc-400 hover:text-green-300 hover:bg-zinc-800/50'
                         }`}
                     title="Projects"
                 >

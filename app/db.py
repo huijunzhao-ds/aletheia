@@ -120,6 +120,11 @@ class UserDataService:
             results.append(d)
         return results
 
+    async def delete_radar_captured_item(self, user_id: str, radar_id: str, item_id: str):
+        doc_ref = self.get_radar_items_collection(user_id, radar_id).document(item_id)
+        await doc_ref.delete()
+        return True
+
     # --- Exploration ---
     def get_exploration_collection(self, user_id: str):
         # Exploration data might be linked to 'sessions' but we can obtain metadata here

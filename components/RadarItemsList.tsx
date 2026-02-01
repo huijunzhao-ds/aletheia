@@ -6,18 +6,42 @@ interface CapturedItem {
     summary: string;
     url?: string;
     authors: string[];
-    timestamp: any;
+    timestamp: string;
     type: string;
+    tags?: string[];
 }
 
 interface RadarItemsListProps {
     items: CapturedItem[];
     onItemClick: (item: CapturedItem) => void;
     onRefresh: () => void;
+    onDeleteItem: (id: string) => void;
+    onSaveToExploration: (item: CapturedItem) => void;
+    onSaveToProject: (item: CapturedItem) => void;
     isLoading: boolean;
+    outputMedia?: string;
 }
 
-export const RadarItemsList: React.FC<RadarItemsListProps> = ({ items, onItemClick, onRefresh, isLoading }) => {
+export const RadarItemsList: React.FC<RadarItemsListProps> = ({
+    items,
+    onItemClick,
+    onRefresh,
+    onDeleteItem,
+    onSaveToExploration,
+    onSaveToProject,
+    isLoading,
+    outputMedia
+}) => {
+    const [activeSaveMenu, setActiveSaveMenu] = React.useState<string | null>(null);
+
+    // Close menu when clicking elsewhere
+    React.useEffect(() => {
+        const handleOutsideClick = () => setActiveSaveMenu(null);
+        if (activeSaveMenu) {
+            window.addEventListener('click', handleOutsideClick);
+        }
+        return () => window.removeEventListener('click', handleOutsideClick);
+    }, [activeSaveMenu]);
     if (isLoading) {
         return (
             <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-zinc-950/50">
@@ -56,18 +80,31 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({ items, onItemCli
         );
     }
 
+    const getRelativeTime = (timestamp: string) => {
+        try {
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+            if (diffInHours < 1) return 'Just now';
+            if (diffInHours < 24) return `${diffInHours} hours ago`;
+            return `${Math.floor(diffInHours / 24)} days ago`;
+        } catch (e) {
+            return 'Recently';
+        }
+    };
+
     return (
-        <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-zinc-950/50 custom-scrollbar">
-            <div className="flex items-center justify-between mb-2">
-                <h3 className="text-zinc-400 text-xs font-bold uppercase tracking-widest">Captured Papers</h3>
+        <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-[#0a0a0f] custom-scrollbar">
+            <div className="flex items-center justify-between mb-4 px-2">
+                <h3 className="text-zinc-500 text-[11px] font-bold uppercase tracking-[0.2em]">Latest Updates</h3>
                 <div className="flex items-center gap-4">
-                    <span className="text-zinc-600 text-[10px]">{items.length} items found</span>
+                    <span className="text-zinc-600 text-[10px] font-medium">{items.length} items found</span>
                     <button
                         onClick={onRefresh}
-                        className="text-zinc-500 hover:text-white transition-colors"
+                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
                         title="Refresh Feed"
                     >
-                        <svg className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>
@@ -77,38 +114,130 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({ items, onItemCli
                 <div
                     key={item.id}
                     onClick={() => onItemClick(item)}
-                    className="bg-zinc-900/60 border border-zinc-800/50 rounded-2xl p-5 hover:bg-zinc-900 hover:border-blue-500/30 transition-all cursor-pointer group shadow-sm"
+                    className="bg-[#161621] border border-zinc-800/40 rounded-2xl p-6 hover:border-zinc-700/60 transition-all cursor-pointer group shadow-xl"
                 >
-                    <div className="flex justify-between items-start mb-2">
-                        <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-bold rounded uppercase tracking-tighter border border-blue-500/20">
-                            {item.type}
-                        </span>
-                        {item.url && (
-                            <a
-                                href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="text-zinc-600 hover:text-blue-400 transition-colors"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                </svg>
-                            </a>
-                        )}
+                    {/* Top Row: Category and Time */}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <span className="px-3 py-1 bg-blue-500/10 text-blue-400 text-[11px] font-bold rounded-full border border-blue-500/20">
+                                {item.type || 'Machine Learning'}
+                            </span>
+                            <span className="text-zinc-500 text-xs font-medium">
+                                {getRelativeTime(item.timestamp)}
+                            </span>
+                        </div>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm('Delete this paper from your feed?')) {
+                                    onDeleteItem(item.id);
+                                }
+                            }}
+                            className="p-1.5 text-zinc-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            title="Delete Item"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
                     </div>
-                    <h4 className="text-white font-semibold text-sm mb-2 group-hover:text-blue-300 transition-colors leading-snug">
+
+                    {/* Title */}
+                    <h4 className="text-white font-bold text-lg mb-1 leading-tight group-hover:text-blue-200 transition-colors">
                         {item.title}
                     </h4>
-                    <p className="text-zinc-500 text-xs line-clamp-3 mb-3 leading-relaxed">
-                        {item.summary}
-                    </p>
-                    <div className="flex flex-wrap gap-1 mt-auto">
-                        {item.authors.slice(0, 2).map((author, idx) => (
-                            <span key={idx} className="text-zinc-600 text-[10px] bg-zinc-800/50 px-2 py-0.5 rounded">
-                                {author}
+
+                    {/* Authors */}
+                    <div className="flex flex-wrap gap-x-2 gap-y-1 mb-3">
+                        {item.authors && item.authors.map((author, idx) => (
+                            <span key={idx} className="text-zinc-500 text-xs font-medium">
+                                {author}{idx < item.authors.length - 1 ? ' •' : ''}
                             </span>
                         ))}
+                    </div>
+
+                    {/* Summary */}
+                    <p className="text-zinc-400 text-[13px] line-clamp-2 mb-6 leading-relaxed opacity-80">
+                        {item.summary}
+                    </p>
+
+                    {/* Tags */}
+                    <div className="flex flex-wrap gap-2 mb-8">
+                        {(item.tags || ['multimodal', 'vision-language', 'transformers']).map((tag, idx) => (
+                            <span key={idx} className="text-zinc-500 text-[11px] font-medium bg-zinc-900/50 px-3 py-1 rounded-md border border-zinc-800/50">
+                                {tag}
+                            </span>
+                        ))}
+                    </div>
+
+                    {/* Bottom Row: Actions and Source */}
+                    <div className="flex items-center justify-between mt-auto">
+                        <div className="flex items-center gap-2 relative">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveSaveMenu(activeSaveMenu === item.id ? null : item.id);
+                                }}
+                                className="flex items-center gap-2 bg-[#4a89f3] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/10"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                                </svg>
+                                Save
+                            </button>
+
+                            {/* Save Menu Dropdown */}
+                            {activeSaveMenu === item.id && (
+                                <div
+                                    className="absolute bottom-full left-0 mb-2 w-48 bg-[#1a1b2e] border border-zinc-800 rounded-xl shadow-2xl z-50 py-2 animate-in fade-in slide-in-from-bottom-2 duration-200"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <button
+                                        onClick={() => {
+                                            onSaveToExploration(item);
+                                            setActiveSaveMenu(null);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                        Save to Exploration
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            onSaveToProject(item);
+                                            setActiveSaveMenu(null);
+                                        }}
+                                        className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                        </svg>
+                                        Save to Project...
+                                    </button>
+                                </div>
+                            )}
+
+                            {outputMedia && (outputMedia.toLowerCase().includes('podcast') || outputMedia.toLowerCase().includes('audio')) ? (
+                                <button className="flex items-center gap-2 bg-[#232333] text-zinc-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#2a2a3d] transition-all border border-zinc-700/30">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                    </svg>
+                                    Podcast
+                                </button>
+                            ) : (
+                                <button className="flex items-center gap-2 bg-[#232333] text-zinc-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#2a2a3d] transition-all border border-zinc-700/30">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Digest
+                                </button>
+                            )}
+                        </div>
+                        <span className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest pt-2">
+                            {item.type || 'arXiv'}
+                        </span>
                     </div>
                 </div>
             ))}

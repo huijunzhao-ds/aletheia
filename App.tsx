@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Dashboard } from './components/Dashboard';
-import { Message } from './types';
+import { Message, RadarItem } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from './firebaseConfig';
 import {
@@ -40,9 +40,11 @@ const App: React.FC = () => {
   const [currentStatus, setCurrentStatus] = useState<string>('');
   const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
   const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
-  const [selectedRadarId, setSelectedRadarId] = useState<string | null>(null);
+  const [selectedRadar, setSelectedRadar] = useState<RadarItem | null>(null);
   const [radarItems, setRadarItems] = useState<any[]>([]);
   const [isRadarItemsLoading, setIsRadarItemsLoading] = useState(false);
+  const [radars, setRadars] = useState<{ id: string, title: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string, title: string }[]>([]);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -87,27 +89,44 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const fetchThreads = async () => {
+    const fetchGlobalData = async () => {
       if (!user) return;
       try {
         const token = await user.getIdToken();
-        const response = await fetch('/api/threads', {
+        // Fetch threads
+        const threadsRes = await fetch('/api/threads', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
-        if (data.threads) {
-          setThreads(data.threads);
+        const threadsData = await threadsRes.json();
+        if (threadsData.threads) setThreads(threadsData.threads);
+
+        // Fetch radars
+        const radarsRes = await fetch('/api/radars', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (radarsRes.ok) {
+          const radarsData = await radarsRes.json();
+          setRadars(radarsData.map((r: any) => ({ id: r.id, title: r.title })));
         }
-        // Clear any previous error status related to loading threads
+
+        // Projects (placeholder)
+        setProjects([{ id: 'proj-1', title: 'Deep Learning Review' }, { id: 'proj-2', title: 'Agentic Workflows' }]);
+
         setCurrentStatus('');
       } catch (error) {
-        console.error("Failed to fetch threads", error);
-        // Inform the user that loading their thread history failed
-        setCurrentStatus('Failed to load your previous threads. Some history may be missing.');
+        console.error("Failed to fetch global data", error);
       }
     };
-    fetchThreads();
+    if (user) {
+      fetchGlobalData();
+    }
   }, [user]);
+
+  useEffect(() => {
+    if (currentView === 'dashboard' || currentView === 'radar') {
+      setIsSidebarOpen(false);
+    }
+  }, [currentView]);
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
@@ -161,11 +180,10 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelectRadar = async (id: string) => {
-    setSelectedRadarId(id);
+  const handleSelectRadar = async (radar: RadarItem) => {
+    setSelectedRadar(radar);
+    const id = radar.id;
     setCurrentView('radar-chat');
-
-    // Clear messages and show a loading placeholder for the briefing
     setMessages([{
       id: 'briefing-loading',
       role: 'assistant',
@@ -207,14 +225,14 @@ const App: React.FC = () => {
   };
 
   const handleSyncRadar = async () => {
-    if (!selectedRadarId || !user) return;
+    if (!selectedRadar || !user) return;
 
     setIsRadarItemsLoading(true);
     try {
       const token = await user.getIdToken();
 
       // 1. Trigger the background sync
-      const syncResponse = await fetch(`/api/radars/${selectedRadarId}/sync`, {
+      const syncResponse = await fetch(`/api/radars/${selectedRadar.id}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -230,7 +248,7 @@ const App: React.FC = () => {
         // 2. Poll/Wait a few seconds for background items to be created
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        const itemsResponse = await fetch(`/api/radars/${selectedRadarId}/items`, {
+        const itemsResponse = await fetch(`/api/radars/${selectedRadar.id}/items`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (itemsResponse.ok) {
@@ -243,6 +261,57 @@ const App: React.FC = () => {
     } finally {
       setIsRadarItemsLoading(false);
     }
+  };
+
+  const handleDeleteRadarItem = async (itemId: string) => {
+    if (!selectedRadar || !user) return;
+
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/radars/${selectedRadar.id}/items/${itemId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        setRadarItems(prev => prev.filter(item => item.id !== itemId));
+      }
+    } catch (error) {
+      console.error("Error deleting radar item:", error);
+    }
+  };
+
+  const handleSaveToExploration = async (item: any) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/exploration/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...item,
+          savedAt: new Date().toISOString(),
+          sourceRadarId: selectedRadar?.id
+        })
+      });
+      if (response.ok) {
+        // Show a brief success toast (using global status for now)
+        setCurrentStatus(`Saved "${item.title}" to your exploration.`);
+        setTimeout(() => setCurrentStatus(''), 3000);
+      }
+    } catch (error) {
+      console.error("Error saving to exploration:", error);
+    }
+  };
+
+  const handleSaveToProject = (item: any) => {
+    // Selection of project will be implemented later
+    console.log("Saving to project - logic to be implemented:", item);
+    setCurrentStatus(`Choosing project for "${item.title}" (Coming Soon)`);
+    setTimeout(() => setCurrentStatus(''), 3000);
   };
 
   const handleSendMessage = async (content: string, files: File[] = []) => {
@@ -312,7 +381,7 @@ const App: React.FC = () => {
           query: content,
           sessionId: sessionId,
           files: uploadedFiles,
-          radarId: currentView === 'radar-chat' ? selectedRadarId : null
+          radarId: currentView === 'radar-chat' ? selectedRadar?.id : null
         }),
       });
 
@@ -398,16 +467,16 @@ const App: React.FC = () => {
     return (
       <Dashboard
         onNavigate={(view: string) => setCurrentView(view as ViewState)}
-        userPhoto={user.photoURL}
-        userName={user.displayName}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
         onSignOut={handleSignOut}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        messages={messages}
+        messages={[]}
         onNewConversation={resetSession}
-        threads={threads}
+        threads={[]}
         onSelectThread={handleSelectThread}
-        documents={sessionDocuments}
+        documents={[]}
         onSelectDocument={setActiveDocument}
         activeDocumentUrl={activeDocument?.url}
       />
@@ -420,16 +489,16 @@ const App: React.FC = () => {
     return (
       <ResearchRadar
         onNavigate={(view: string) => setCurrentView(view as ViewState)}
-        userPhoto={user.photoURL}
-        userName={user.displayName}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
         onSignOut={handleSignOut}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        messages={messages}
+        messages={[]}
         onNewConversation={resetSession}
-        threads={threads}
+        threads={[]}
         onSelectThread={handleSelectThread}
-        documents={sessionDocuments}
+        documents={[]}
         onSelectDocument={setActiveDocument}
         activeDocumentUrl={activeDocument?.url}
         onSelectRadar={handleSelectRadar}
@@ -444,8 +513,8 @@ const App: React.FC = () => {
         title='Project Management'
         description="Project Management will enable you to organize your research threads, save artifacts, and collaborate with teams. This feature is in active development."
         onNavigate={(view: string) => setCurrentView(view as ViewState)}
-        userPhoto={user.photoURL}
-        userName={user.displayName}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
         onSignOut={handleSignOut}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -463,6 +532,29 @@ const App: React.FC = () => {
   // Exploration or Radar Chat View (Sidebar + Chat)
   const isRadarChat = currentView === 'radar-chat';
 
+  const radarDocuments = radarItems.map(item => {
+    const dateStr = item.timestamp.split('T')[0].replace(/-/g, '');
+    const sanitizedTitle = item.title.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
+    const isPodcast = selectedRadar?.outputMedia?.toLowerCase().includes('podcast');
+    const extension = isPodcast ? 'mp3' : 'md';
+    const typeLabel = isPodcast ? 'podcast' : 'digest';
+    return {
+      id: item.id,
+      name: `${dateStr}-${sanitizedTitle}-${typeLabel}.${extension}`,
+      url: item.url || '#',
+      isRadarAsset: true
+    };
+  });
+
+  const handleDownloadDocument = (doc: { name: string, url: string }) => {
+    const link = document.createElement('a');
+    link.href = doc.url;
+    link.download = doc.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
       <Sidebar
@@ -474,15 +566,17 @@ const App: React.FC = () => {
         onNewConversation={resetSession}
         threads={threads}
         onSelectThread={handleSelectThread}
-        documents={isRadarChat ? [] : sessionDocuments}
+        documents={isRadarChat ? radarDocuments : sessionDocuments}
         onSelectDocument={isRadarChat ? () => { } : setActiveDocument}
+        onDeleteDocument={isRadarChat ? handleDeleteRadarItem : undefined}
+        onDownloadDocument={handleDownloadDocument}
         activeDocumentUrl={isRadarChat ? undefined : activeDocument?.url}
       />
       <main className="flex-1 flex overflow-hidden relative">
         {!isSidebarOpen && (
           <button
             onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
+            className="absolute bottom-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
             title="Show Sidebar"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -491,11 +585,15 @@ const App: React.FC = () => {
           </button>
         )}
         {isRadarChat && (
-          <div className="w-[420px] h-full flex flex-col border-r border-zinc-800 animate-in slide-in-from-left duration-500">
+          <div className="w-[540px] h-full flex flex-col border-r border-zinc-800 animate-in slide-in-from-left duration-500">
             <RadarItemsList
               items={radarItems}
               isLoading={isRadarItemsLoading}
               onRefresh={handleSyncRadar}
+              onDeleteItem={handleDeleteRadarItem}
+              onSaveToExploration={handleSaveToExploration}
+              onSaveToProject={handleSaveToProject}
+              outputMedia={selectedRadar?.outputMedia || 'Insight Digest'}
               onItemClick={(item) => {
                 handleSendMessage(`What are the key findings of the paper titled "${item.title}"?`);
               }}
@@ -516,8 +614,8 @@ const App: React.FC = () => {
             <NavBar
               currentView={currentView}
               onNavigate={(view: string) => setCurrentView(view as ViewState)}
-              userPhoto={user.photoURL}
-              userName={user.displayName}
+              userPhoto={user?.photoURL}
+              userName={user?.displayName}
               onSignOut={handleSignOut}
             />
           </div>
@@ -534,7 +632,7 @@ const App: React.FC = () => {
                 });
               }
             }}
-            userPhoto={user.photoURL}
+            userPhoto={user?.photoURL}
           />
         </div>
       </main>

@@ -17,9 +17,26 @@ export interface Message {
   isThinking?: boolean;
 }
 
-export interface AppState {
-  messages: Message[];
-  isSidebarOpen: boolean;
-  isProcessing: boolean;
-  status: string;
+export interface ArxivConfig {
+  categories: string[];
+  authors: string[];
+  keywords: string[];
+  journalReference?: string;
+}
+
+export interface RadarItem {
+  id: string;
+  title: string;
+  description: string;
+  sources: string[];
+  frequency: string;
+  outputMedia: string;
+  customPrompt?: string;
+  arxivConfig?: ArxivConfig;
+  lastUpdated: string;
+  status: 'active' | 'paused';
+  latestSummary?: string;
+  isStarred: boolean;
+  capturedCount: number;
+  unreadCount: number;
 }
