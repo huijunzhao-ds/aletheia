@@ -149,8 +149,12 @@ class FirestoreSessionService(BaseSessionService):
             state.update(state_update)
             await doc_ref.update({"state": state})
 
-    async def list_sessions(self, *, user_id: str, app_name: str) -> List[Session]:
-        docs = self.db.collection(self.collection_name).where("user_id", "==", user_id).where("app_name", "==", app_name).stream()
+    async def list_sessions(self, *, user_id: str, app_name: str, radar_id: Optional[str] = None) -> List[Session]:
+        query = self.db.collection(self.collection_name).where("user_id", "==", user_id).where("app_name", "==", app_name)
+        if radar_id:
+            query = query.where("state.radar_id", "==", radar_id)
+        
+        docs = query.stream()
         results = []
         async for doc in docs:
             data = doc.to_dict()
@@ -167,8 +171,8 @@ class FirestoreSessionService(BaseSessionService):
             results.append(Session.model_validate(data))
         return results
 
-    async def list_sessions_for_user(self, *, user_id: str, app_name: str) -> List[Session]:
-        return await self.list_sessions(user_id=user_id, app_name=app_name)
+    async def list_sessions_for_user(self, *, user_id: str, app_name: str, radar_id: Optional[str] = None) -> List[Session]:
+        return await self.list_sessions(user_id=user_id, app_name=app_name, radar_id=radar_id)
 
     async def delete_session(self, *, user_id: str, session_id: str, app_name: str) -> None:
         await self.db.collection(self.collection_name).document(session_id).delete()

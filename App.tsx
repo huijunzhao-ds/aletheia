@@ -26,7 +26,7 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [sessionId, setSessionId] = useState<string>(uuidv4());
-  const [threads, setThreads] = useState<{ id: string, title: string }[]>([]);
+  const [threads, setThreads] = useState<{ id: string, title: string, radarId?: string }[]>([]);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -125,6 +125,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentView === 'dashboard' || currentView === 'radar') {
       setIsSidebarOpen(false);
+    } else {
+      setIsSidebarOpen(true);
     }
   }, [currentView]);
 
@@ -184,31 +186,69 @@ const App: React.FC = () => {
     setSelectedRadar(radar);
     const id = radar.id;
     setCurrentView('radar-chat');
+    setIsSidebarOpen(true);
+
+    // Clear previous session state before starting/resuming radar session
     setMessages([{
       id: 'briefing-loading',
       role: 'assistant',
-      content: 'Summarizing latest radar updates...',
+      content: 'Initializing radar workspace...',
       timestamp: new Date()
     }]);
+    setSessionDocuments([]);
+    setActiveDocument(null);
 
     try {
       const token = await auth.currentUser?.getIdToken();
 
-      // Fetch briefing
+      // 1. Fetch briefing and determine scenario
       const briefingResponse = await fetch(`/api/radars/briefing?radar_id=${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+
+      let briefingData = { summary: "", scenario: "new" };
       if (briefingResponse.ok) {
-        const data = await briefingResponse.json();
+        briefingData = await briefingResponse.json();
+      }
+
+      // 2. Fetch threads for this radar specifically to decide if we resume
+      const threadsRes = await fetch(`/api/threads?radar_id=${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const threadsData = await threadsRes.json();
+      const radarThreads = threadsData.threads || [];
+
+      // Update global threads with new items (deduplicated)
+      setThreads(prev => {
+        const existingIds = new Set(prev.map(t => t.id));
+        const newThreads = radarThreads.filter((t: any) => !existingIds.has(t.id));
+        return [...newThreads, ...prev];
+      });
+
+      if (briefingData.scenario === 'resuming' && radarThreads.length > 0) {
+        // Scenario 2.1: Pickup existing work - Load the latest thread
+        const latestThread = radarThreads[0]; // Assuming backend returns sorted by date
+        await handleSelectThread(latestThread.id);
+
+        // Prepend the briefing/welcome back message to the existing history
+        setMessages(prev => [{
+          id: uuidv4(),
+          role: 'assistant',
+          content: briefingData.summary,
+          timestamp: new Date()
+        }, ...prev]);
+      } else {
+        // Scenarios 2.2 and 2.3: New parse or new radar
         setMessages([{
           id: uuidv4(),
           role: 'assistant',
-          content: data.summary,
+          content: briefingData.summary,
           timestamp: new Date()
         }]);
+        setSessionId(uuidv4());
       }
 
-      // Fetch items (papers)
+      // 3. Fetch items (papers/artifacts)
       setIsRadarItemsLoading(true);
       const itemsResponse = await fetch(`/api/radars/${id}/items`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -219,6 +259,12 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error("Error fetching radar details:", error);
+      setMessages([{
+        id: uuidv4(),
+        role: 'assistant',
+        content: "I encountered an error trying to initialize this radar. Please try again or check your connection.",
+        timestamp: new Date()
+      }]);
     } finally {
       setIsRadarItemsLoading(false);
     }
@@ -278,6 +324,33 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error("Error deleting radar item:", error);
+    }
+  };
+
+  const handleDeleteThread = async (threadId: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/threads/${threadId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        setThreads(prev => prev.filter(t => t.id !== threadId));
+        if (sessionId === threadId) {
+          setSessionId(uuidv4());
+          setMessages([{
+            id: 'welcome',
+            role: 'assistant',
+            content: 'Starting a new research thread. How can I help?',
+            timestamp: new Date(),
+          }]);
+          setActiveDocument(null);
+          setSessionDocuments([]);
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting thread:", error);
     }
   };
 
@@ -462,6 +535,21 @@ const App: React.FC = () => {
     );
   }
 
+  const handleDownloadDocument = (doc: { name: string, url: string }) => {
+    const link = document.createElement('a');
+    link.href = doc.url;
+    link.download = doc.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Filter threads based on context
+  const isRadarChat = currentView === 'radar-chat';
+  const filteredThreads = isRadarChat
+    ? threads.filter(t => t.radarId === selectedRadar?.id)
+    : threads.filter(t => !t.radarId);
+
   // Dashboard View
   if (currentView === 'dashboard') {
     return (
@@ -474,10 +562,13 @@ const App: React.FC = () => {
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         messages={[]}
         onNewConversation={resetSession}
-        threads={[]}
+        threads={filteredThreads}
         onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
         documents={[]}
         onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
         activeDocumentUrl={activeDocument?.url}
       />
     );
@@ -496,10 +587,13 @@ const App: React.FC = () => {
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         messages={[]}
         onNewConversation={resetSession}
-        threads={[]}
+        threads={filteredThreads}
         onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
         documents={[]}
         onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
         activeDocumentUrl={activeDocument?.url}
         onSelectRadar={handleSelectRadar}
       />
@@ -520,17 +614,18 @@ const App: React.FC = () => {
         onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         messages={messages}
         onNewConversation={resetSession}
-        threads={threads}
+        threads={filteredThreads}
         onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
         documents={sessionDocuments}
         onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
         activeDocumentUrl={activeDocument?.url}
       />
     );
   }
 
-  // Exploration or Radar Chat View (Sidebar + Chat)
-  const isRadarChat = currentView === 'radar-chat';
 
   const radarDocuments = radarItems.map(item => {
     const dateStr = item.timestamp.split('T')[0].replace(/-/g, '');
@@ -546,15 +641,6 @@ const App: React.FC = () => {
     };
   });
 
-  const handleDownloadDocument = (doc: { name: string, url: string }) => {
-    const link = document.createElement('a');
-    link.href = doc.url;
-    link.download = doc.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
       <Sidebar
@@ -564,8 +650,9 @@ const App: React.FC = () => {
         userName={user.displayName}
         userPhoto={user.photoURL}
         onNewConversation={resetSession}
-        threads={threads}
+        threads={filteredThreads}
         onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
         documents={isRadarChat ? radarDocuments : sessionDocuments}
         onSelectDocument={isRadarChat ? () => { } : setActiveDocument}
         onDeleteDocument={isRadarChat ? handleDeleteRadarItem : undefined}

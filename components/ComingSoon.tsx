@@ -19,6 +19,9 @@ interface ComingSoonProps {
     onSelectThread: (id: string) => void;
     documents: { name: string, url: string }[];
     onSelectDocument: (doc: { url: string, name: string } | null) => void;
+    onDeleteDocument?: (id: string) => void;
+    onDownloadDocument?: (doc: { name: string, url: string }) => void;
+    onDeleteThread?: (id: string) => void;
     activeDocumentUrl?: string;
 }
 
@@ -37,6 +40,9 @@ export const ComingSoon: React.FC<ComingSoonProps> = ({
     onSelectThread,
     documents,
     onSelectDocument,
+    onDeleteDocument,
+    onDownloadDocument,
+    onDeleteThread,
     activeDocumentUrl
 }) => {
     return (
@@ -52,6 +58,9 @@ export const ComingSoon: React.FC<ComingSoonProps> = ({
                 onSelectThread={onSelectThread}
                 documents={documents}
                 onSelectDocument={onSelectDocument}
+                onDeleteDocument={onDeleteDocument}
+                onDownloadDocument={onDownloadDocument}
+                onDeleteThread={onDeleteThread}
                 activeDocumentUrl={activeDocumentUrl}
             />
 

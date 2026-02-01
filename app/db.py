@@ -90,6 +90,11 @@ class UserDataService:
             "status": status
         })
 
+    async def track_radar_viewed(self, user_id: str, radar_id: str):
+        return await self.get_radar_collection(user_id).document(radar_id).update({
+            "lastViewed": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+        })
+
     async def reset_radar_unread(self, user_id: str, radar_id: str):
         return await self.get_radar_collection(user_id).document(radar_id).update({
             "unreadCount": 0

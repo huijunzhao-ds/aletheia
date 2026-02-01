@@ -14,6 +14,7 @@ interface SidebarProps {
   onSelectDocument?: (doc: { id?: string, name: string, url: string, isRadarAsset?: boolean }) => void;
   onDeleteDocument?: (id: string) => void;
   onDownloadDocument?: (doc: { name: string, url: string }) => void;
+  onDeleteThread?: (id: string) => void;
   activeDocumentUrl?: string;
 }
 
@@ -32,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectDocument,
   onDeleteDocument,
   onDownloadDocument,
+  onDeleteThread,
   activeDocumentUrl
 }) => {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -125,16 +127,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div
                   key={idx}
                   onClick={() => onSelectDocument?.(doc)}
-                  className={`px-3 py-2 text-sm rounded cursor-pointer truncate flex items-center gap-2 group transition-colors ${activeDocumentUrl === doc.url
+                  className={`px-3 py-2 text-sm rounded cursor-pointer flex items-center justify-between group transition-colors ${activeDocumentUrl === doc.url
                     ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-transparent'
                     }`}
                   title={doc.name}
                 >
-                  <svg className={`w-3.5 h-3.5 flex-shrink-0 ${activeDocumentUrl === doc.url ? 'text-indigo-400' : 'text-zinc-600 group-hover:text-zinc-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span className="truncate">{doc.name}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <svg className={`w-3.5 h-3.5 flex-shrink-0 ${activeDocumentUrl === doc.url ? 'text-indigo-400' : 'text-zinc-600 group-hover:text-zinc-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span className="truncate">{doc.name}</span>
+                  </div>
+
+                  <div className="relative flex-shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(activeMenuId === `art-${idx}` ? null : `art-${idx}`);
+                      }}
+                      className="p-1 hover:bg-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <svg className="w-3.5 h-3.5 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8a2 2 0 100-4 2 2 0 000 4zM12 14a2 2 0 100-4 2 2 0 000 4zM12 20a2 2 0 100-4 2 2 0 000 4z" />
+                      </svg>
+                    </button>
+
+                    {activeMenuId === `art-${idx}` && (
+                      <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
               {articleDocs.length === 0 && (
@@ -168,7 +209,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div
                   key={idx}
                   onClick={() => onSelectDocument?.(doc)}
-                  className={`px-3 py-2 text-sm rounded cursor-pointer truncate flex items-center justify-between group transition-colors ${activeDocumentUrl === doc.url
+                  className={`px-3 py-2 text-sm rounded cursor-pointer flex items-center justify-between group transition-colors ${activeDocumentUrl === doc.url
                     ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30'
                     : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-transparent'
                     }`}
@@ -191,7 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setActiveMenuId(activeMenuId === `${idx}` ? null : `${idx}`);
+                        setActiveMenuId(activeMenuId === `media-${idx}` ? null : `media-${idx}`);
                       }}
                       className="p-1 hover:bg-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100"
                     >
@@ -200,10 +241,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </svg>
                     </button>
 
-                    {activeMenuId === `${idx}` && (
+                    {activeMenuId === `media-${idx}` && (
                       <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
                         <button
-                          onClick={() => onDownloadDocument?.(doc)}
+                          onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           Download
                         </button>
                         <button
-                          onClick={() => doc.id && onDeleteDocument?.(doc.id)}
+                          onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2"
                         >
                           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -280,12 +321,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div
                   key={thread.id}
                   onClick={() => onSelectThread?.(thread.id)}
-                  className="px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded cursor-pointer truncate flex items-center gap-2 group"
+                  className="px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded cursor-pointer flex items-center justify-between group"
                 >
-                  <svg className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  <span className="truncate">{thread.title}</span>
+                  <div className="flex items-center gap-2 truncate">
+                    <svg className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span className="truncate">{thread.title}</span>
+                  </div>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm('Delete this research session?')) {
+                        onDeleteThread?.(thread.id);
+                      }
+                    }}
+                    className="p-1 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    title="Delete Chat"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               ))}
               {threads.length === 0 && (

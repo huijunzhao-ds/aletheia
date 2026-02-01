@@ -76,10 +76,16 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         if not session_exists:
             try:
                 logger.info(f"Initializing session: {session_id}")
-                await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+                state = {}
+                if request.radarId:
+                    state["radar_id"] = request.radarId
+                await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name, state=state)
             except Exception:
                 logger.exception(f"Error initializing session: {session_id}")
                 raise
+        elif request.radarId:
+            # Tag existing session if radarId is provided
+            await session_service.update_session(user_id=user_id, session_id=session_id, app_name=adk_app.name, state_update={"radar_id": request.radarId})
         
         # Save the query as the title if this is a fresh session
         try:
@@ -227,13 +233,22 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         logger.error(f"Error processing research request: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/api/threads/{session_id}")
+async def delete_thread(session_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        await session_service.delete_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        return {"status": "success", "message": f"Thread {session_id} deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting thread {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/threads")
-async def get_user_threads(user_id: str = Depends(get_current_user)):
+async def get_user_threads(radar_id: Optional[str] = None, user_id: str = Depends(get_current_user)):
     try:
         threads = []
         session_list_fn = getattr(session_service, "list_sessions_for_user", None)
         if callable(session_list_fn):
-            sessions = await session_list_fn(user_id=user_id, app_name=adk_app.name)
+            sessions = await session_list_fn(user_id=user_id, app_name=adk_app.name, radar_id=radar_id)
             for s in sessions or []:
                 if isinstance(s, dict):
                     raw_state = s.get("state") or {}
@@ -245,7 +260,11 @@ async def get_user_threads(user_id: str = Depends(get_current_user)):
                     title = (raw_state.get("title") if isinstance(raw_state, dict) else None) or getattr(s, "title", None) or "Untitled Research"
 
                 if session_id:
-                    threads.append({"id": session_id, "title": title})
+                    threads.append({
+                        "id": session_id, 
+                        "title": title,
+                        "radarId": raw_state.get("radar_id")
+                    })
             return {"threads": threads}
         return {"threads": []}
     except Exception as e:
@@ -312,7 +331,10 @@ async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depe
     Returns a briefing message for the Research Radar view.
     - If no radar_id and no radars: Returns a capability description.
     - If no radar_id but has radars: Returns a summary of all radar updates.
-    - If radar_id: Returns a summary for that specific radar.
+    - If radar_id: Returns a summary for that specific radar based on scenarios:
+        2.1 Existing work (viewed): Welcome back + summary + continue.
+        2.2 New parse (unviewed): Time since last review + new info + start.
+        2.3 New radar (no parse): Welcome + sweep prompt.
     """
     from app.db import user_data_service
     try:
@@ -320,24 +342,48 @@ async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depe
             radar_doc = await user_data_service.get_radar_collection(user_id).document(radar_id).get()
             if not radar_doc.exists:
                 return {"summary": "Radar configuration not found."}
+            
             data = radar_doc.to_dict()
             name = data.get('title', 'this radar')
-            
             summary = data.get('latest_summary')
-            if summary:
-                return {"summary": f"Welcome back to **{name}**. Here is the latest summary I've prepared for you:\n\n{summary}"}
-                
-            return {"summary": f"Welcome to the **{name}** radar chat! I haven't parsed the latest updates for this radar yet. Would you like me to start a sweep now?"}
+            last_updated = data.get('lastUpdated')
+            last_viewed = data.get('lastViewed')
 
+            # Track view immediately
+            await user_data_service.track_radar_viewed(user_id, radar_id)
+
+            # Scenario 2.3: No parse ever happened
+            if not last_updated:
+                return {
+                    "scenario": "new",
+                    "summary": f"Welcome to the **{name}** radar! I am ready to monitor this space for you. Would you like to start with an initial sweep to see what's currently trending?"
+                }
+
+            # Scenario 2.2: New parse that user hasn't reviewed
+            # (last_updated exists and either no last_viewed OR last_updated is newer than last_viewed)
+            is_new_parse = not last_viewed or last_updated > last_viewed
+            if is_new_parse:
+                return {
+                    "scenario": "unviewed",
+                    "summary": f"It's been a while since you last reviewed the updates for **{name}**. I've found some new developments since {last_viewed or 'you started'}:\n\n{summary}\n\nWhere would you like to start exploring?"
+                }
+
+            # Scenario 2.1: Pickup existing work
+            return {
+                "scenario": "resuming",
+                "summary": f"Welcome back to **{name}**! We were previously analyzing the latest updates. Here is the last summary we discussed:\n\n{summary}\n\nLet's continue our research. What's on your mind?"
+            }
+
+        # Global briefing
         radars = await user_data_service.get_radar_items(user_id)
         if not radars:
             return {
-                "summary": "Research Radar allows you to track real-time updates from Arxiv, Tech Blogs, and Social Media. You can configure custom filters, authors, and keywords to get precise notifications on your favorite topics."
+                "summary": "Research Radar allows you to track real-time updates. Configure your first radar to begin monitoring specialized sources."
             }
         
         titles = [r.get('title') for r in radars]
         return {
-            "summary": f"Welcome back! Your radars are actively monitoring **{', '.join(titles)}**. I found 8 new papers on Arxiv and 3 interesting blog posts matching your criteria since your last visit. Which one would you like to dive into?"
+            "summary": f"Welcome back! Your radars are actively monitoring **{', '.join(titles)}**. Which one would you like to dive into today?"
         }
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
