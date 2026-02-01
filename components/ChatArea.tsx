@@ -73,10 +73,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   return (
-    <div className="flex flex-col flex-1 h-full max-w-5xl mx-auto w-full">
+    <div className="flex flex-col flex-1 h-full max-w-5xl mx-auto w-full relative">
+      {/* Top fade/mask for smooth transition under absolute NavBar */}
+      <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-zinc-950 to-transparent z-40 pointer-events-none" />
+
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 md:px-8 py-8 space-y-8 scroll-smooth"
+        className="flex-1 overflow-y-auto px-4 md:px-8 pt-24 pb-8 space-y-8 scroll-smooth"
       >
         {messages.map((message) => (
           <MessageItem key={message.id} message={message} onFileClick={onFileClick} userPhoto={userPhoto} />

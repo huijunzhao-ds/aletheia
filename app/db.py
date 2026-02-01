@@ -1,5 +1,6 @@
 import os
 import logging
+import datetime
 from typing import Optional, Any, Dict, List
 from google.cloud import firestore
 
@@ -67,6 +68,57 @@ class UserDataService:
 
     async def delete_radar_item(self, user_id: str, radar_id: str):
         return await self.get_radar_collection(user_id).document(radar_id).delete()
+
+    async def save_radar_summary(self, user_id: str, radar_id: str, summary: str, captured_inc: int = 0):
+        update_data = {
+            "latest_summary": summary,
+            "lastUpdated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+        }
+        if captured_inc > 0:
+            update_data["capturedCount"] = firestore.Increment(captured_inc)
+            update_data["unreadCount"] = firestore.Increment(captured_inc)
+            
+        return await self.get_radar_collection(user_id).document(radar_id).update(update_data)
+
+    async def toggle_radar_star(self, user_id: str, radar_id: str, is_starred: bool):
+        return await self.get_radar_collection(user_id).document(radar_id).update({
+            "isStarred": is_starred
+        })
+
+    async def update_radar_status(self, user_id: str, radar_id: str, status: str):
+        return await self.get_radar_collection(user_id).document(radar_id).update({
+            "status": status
+        })
+
+    async def reset_radar_unread(self, user_id: str, radar_id: str):
+        return await self.get_radar_collection(user_id).document(radar_id).update({
+            "unreadCount": 0
+        })
+
+    def get_radar_items_collection(self, user_id: str, radar_id: str):
+        return self.get_radar_collection(user_id).document(radar_id).collection("captured_items")
+
+    async def add_radar_captured_item(self, user_id: str, radar_id: str, item_data: dict):
+        # Use title or similar as a basis for ID or let it auto-generate
+        doc_ref = self.get_radar_items_collection(user_id, radar_id).document()
+        await doc_ref.set(item_data)
+        return doc_ref.id
+
+    async def get_radar_captured_items(self, user_id: str, radar_id: str):
+        docs = self.get_radar_items_collection(user_id, radar_id).limit(20).stream()
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            # Sanitize for JSON: convert datetime/timestamps to strings
+            for key, value in d.items():
+                if hasattr(value, "isoformat"):
+                    d[key] = value.isoformat()
+                elif hasattr(value, "to_datetime"): # Handle Timestamp
+                    d[key] = value.to_datetime().isoformat()
+                    
+            results.append(d)
+        return results
 
     # --- Exploration ---
     def get_exploration_collection(self, user_id: str):

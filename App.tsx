@@ -15,6 +15,7 @@ import {
 import { DocumentViewer } from './components/DocumentViewer';
 
 import { ComingSoon } from './components/ComingSoon';
+import { RadarItemsList } from './components/RadarItemsList';
 import { ResearchRadar } from './components/ResearchRadar';
 import { NavBar } from './components/NavBar';
 
@@ -40,6 +41,8 @@ const App: React.FC = () => {
   const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
   const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
   const [selectedRadarId, setSelectedRadarId] = useState<string | null>(null);
+  const [radarItems, setRadarItems] = useState<any[]>([]);
+  const [isRadarItemsLoading, setIsRadarItemsLoading] = useState(false);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -158,9 +161,88 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSelectRadar = (id: string) => {
+  const handleSelectRadar = async (id: string) => {
     setSelectedRadarId(id);
     setCurrentView('radar-chat');
+
+    // Clear messages and show a loading placeholder for the briefing
+    setMessages([{
+      id: 'briefing-loading',
+      role: 'assistant',
+      content: 'Summarizing latest radar updates...',
+      timestamp: new Date()
+    }]);
+
+    try {
+      const token = await auth.currentUser?.getIdToken();
+
+      // Fetch briefing
+      const briefingResponse = await fetch(`/api/radars/briefing?radar_id=${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (briefingResponse.ok) {
+        const data = await briefingResponse.json();
+        setMessages([{
+          id: uuidv4(),
+          role: 'assistant',
+          content: data.summary,
+          timestamp: new Date()
+        }]);
+      }
+
+      // Fetch items (papers)
+      setIsRadarItemsLoading(true);
+      const itemsResponse = await fetch(`/api/radars/${id}/items`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (itemsResponse.ok) {
+        const items = await itemsResponse.json();
+        setRadarItems(items);
+      }
+    } catch (error) {
+      console.error("Error fetching radar details:", error);
+    } finally {
+      setIsRadarItemsLoading(false);
+    }
+  };
+
+  const handleSyncRadar = async () => {
+    if (!selectedRadarId || !user) return;
+
+    setIsRadarItemsLoading(true);
+    try {
+      const token = await user.getIdToken();
+
+      // 1. Trigger the background sync
+      const syncResponse = await fetch(`/api/radars/${selectedRadarId}/sync`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (syncResponse.ok) {
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          role: 'assistant',
+          content: '_Agent scanning specialized sources for new research papers..._',
+          timestamp: new Date()
+        }]);
+
+        // 2. Poll/Wait a few seconds for background items to be created
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        const itemsResponse = await fetch(`/api/radars/${selectedRadarId}/items`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (itemsResponse.ok) {
+          const items = await itemsResponse.json();
+          setRadarItems(items);
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing radar:", error);
+    } finally {
+      setIsRadarItemsLoading(false);
+    }
   };
 
   const handleSendMessage = async (content: string, files: File[] = []) => {
@@ -408,6 +490,18 @@ const App: React.FC = () => {
             </svg>
           </button>
         )}
+        {isRadarChat && (
+          <div className="w-[420px] h-full flex flex-col border-r border-zinc-800 animate-in slide-in-from-left duration-500">
+            <RadarItemsList
+              items={radarItems}
+              isLoading={isRadarItemsLoading}
+              onRefresh={handleSyncRadar}
+              onItemClick={(item) => {
+                handleSendMessage(`What are the key findings of the paper titled "${item.title}"?`);
+              }}
+            />
+          </div>
+        )}
         {!isRadarChat && activeDocument && (
           <div className="flex-1 h-full flex flex-col min-w-0">
             <DocumentViewer
@@ -417,7 +511,7 @@ const App: React.FC = () => {
             />
           </div>
         )}
-        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${(!isRadarChat && activeDocument) ? 'flex-1 min-w-0' : 'w-full'}`}>
+        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${((!isRadarChat && activeDocument) || isRadarChat) ? 'flex-1 min-w-0' : 'w-full'}`}>
           <div className="absolute top-4 right-4 z-50">
             <NavBar
               currentView={currentView}

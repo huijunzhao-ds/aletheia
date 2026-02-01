@@ -13,6 +13,7 @@ class RadarCreate(BaseModel):
     sources: List[str]
     frequency: str
     outputMedia: str
+    isStarred: bool = False
     customPrompt: Optional[str] = ""
     arxivConfig: Optional[ArxivConfig] = None
 
@@ -20,6 +21,9 @@ class RadarItemResponse(RadarCreate):
     id: str
     lastUpdated: str
     status: str
+    capturedCount: int = 0
+    unreadCount: int = 0
+    latest_summary: Optional[str] = None
 
 class ResearchRequest(BaseModel):
     query: str

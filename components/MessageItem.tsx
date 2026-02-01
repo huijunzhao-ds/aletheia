@@ -13,10 +13,43 @@ interface MessageItemProps {
 
 export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, userPhoto }) => {
   const isAssistant = message.role === 'assistant';
+  const isSystem = message.role === 'system';
+  const isTool = message.role === 'tool';
+  const isUser = message.role === 'user';
+
+  if (isSystem || isTool) {
+    return (
+      <div className="flex items-start w-full mb-6 px-4 animate-in fade-in slide-in-from-left-2 duration-300">
+        <div className="mr-3 mt-1 flex-shrink-0">
+          <div className="w-6 h-6 rounded-md bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
+            {isSystem ? (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 pb-2 border-l-2 border-zinc-800/30 pl-4">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-1">
+            {isSystem ? 'System Logic' : 'Agent Action'}
+          </div>
+          <div className="text-sm text-zinc-500 leading-relaxed font-mono opacity-80 line-clamp-6 hover:line-clamp-none transition-all cursor-pointer">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500 w-full mb-6`}>
-      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${!isAssistant ? 'flex-row-reverse space-x-reverse' : ''}`}>
+      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
         {/* Avatar */}
         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 overflow-hidden ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
           }`}>
@@ -36,7 +69,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, 
         </div>
 
         {/* Message Content Container */}
-        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${!isAssistant ? 'items-end' : 'items-start'}`}>
+        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           <div className={`px-5 py-4 rounded-2xl shadow-sm leading-relaxed text-[15px] border w-full ${isAssistant
             ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none'
             : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'

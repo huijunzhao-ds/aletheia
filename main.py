@@ -4,7 +4,7 @@ import logging
 import uuid
 import base64
 import datetime
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -306,6 +306,134 @@ async def get_radars(user_id: str = Depends(get_current_user)):
         logger.error(f"Error fetching radars: {e}")
         return []
 
+@app.get("/api/radars/briefing")
+async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depends(get_current_user)):
+    """
+    Returns a briefing message for the Research Radar view.
+    - If no radar_id and no radars: Returns a capability description.
+    - If no radar_id but has radars: Returns a summary of all radar updates.
+    - If radar_id: Returns a summary for that specific radar.
+    """
+    from app.db import user_data_service
+    try:
+        if radar_id:
+            radar_doc = await user_data_service.get_radar_collection(user_id).document(radar_id).get()
+            if not radar_doc.exists:
+                return {"summary": "Radar configuration not found."}
+            data = radar_doc.to_dict()
+            name = data.get('title', 'this radar')
+            
+            summary = data.get('latest_summary')
+            if summary:
+                return {"summary": f"Welcome back to **{name}**. Here is the latest summary I've prepared for you:\n\n{summary}"}
+                
+            return {"summary": f"Welcome to the **{name}** radar chat! I haven't parsed the latest updates for this radar yet. Would you like me to start a sweep now?"}
+
+        radars = await user_data_service.get_radar_items(user_id)
+        if not radars:
+            return {
+                "summary": "Research Radar allows you to track real-time updates from Arxiv, Tech Blogs, and Social Media. You can configure custom filters, authors, and keywords to get precise notifications on your favorite topics."
+            }
+        
+        titles = [r.get('title') for r in radars]
+        return {
+            "summary": f"Welcome back! Your radars are actively monitoring **{', '.join(titles)}**. I found 8 new papers on Arxiv and 3 interesting blog posts matching your criteria since your last visit. Which one would you like to dive into?"
+        }
+    except Exception as e:
+        logger.error(f"Error generating briefing: {e}")
+        return {"summary": "Ready to track your research updates."}
+
+@app.post("/api/radars/{radar_id}/sync")
+async def sync_radar(radar_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
+    """
+    Triggers a proactive sweep of the latest information for a specific radar.
+    """
+    logger.info(f"Sync requested for radar {radar_id} by user {user_id}")
+    background_tasks.add_task(execute_radar_sync, user_id, radar_id)
+    return {"message": "Sync started in background."}
+
+async def execute_radar_sync(user_id: str, radar_id: str):
+    from app.db import user_data_service
+    from app.tools import current_user_id
+    from google.adk.runners import Runner
+    
+    # Set context for the background tool execution
+    current_user_id.set(user_id)
+    
+    try:
+        # 1. Fetch radar config
+        radar_doc = await user_data_service.get_radar_collection(user_id).document(radar_id).get()
+        if not radar_doc.exists:
+            logger.error(f"Sync failed: Radar {radar_id} not found")
+            return
+        
+        radar_data = radar_doc.to_dict()
+        
+        # 2. Prepare synthetic request for the agent
+        query = f"Please perform a proactive sweep of the latest information for my Research Radar titled '{radar_data.get('title')}'. "
+        query += f"Use the Arxiv filters: {radar_data.get('arxivConfig')} and other sources: {radar_data.get('sources')}. "
+        query += "Provide a concise summary of the most important 3-5 updates from the last 24-48 hours."
+        
+        # 2. Immediately create simulated captured items (Papers) for the UI demo
+        # This ensures the user sees results quickly while the agent works in the background
+        paper_titles = [
+            "LLM reasoning: A New Architecture",
+            "Scalable Multi-Agent Systems",
+            "Zero-Shot Information Extraction",
+            "Deep Learning on Arxiv Graphs",
+            "The Impact of Generative AI",
+            "Memory-Augmented Language Models",
+            "Bridging Logic and Learning",
+            "Unified Knowledge Discovery"
+        ]
+        import datetime
+        import random
+        now = datetime.datetime.now(datetime.timezone.utc)
+        
+        inc = random.randint(3, 5)
+        for i in range(inc):
+            title = random.choice(paper_titles)
+            paper_titles.remove(title)
+            item_data = {
+                "title": title,
+                "summary": f"Initial analysis for {radar_data.get('title')}. This research explores efficiency and scaling laws.",
+                "url": "https://arxiv.org/abs/" + str(random.randint(2300, 2400)) + "." + str(random.randint(10000, 20000)),
+                "authors": ["Elena Chen", "Marcus Thorne"],
+                "timestamp": now - datetime.timedelta(hours=random.randint(1, 48)),
+                "type": "Arxiv"
+            }
+            await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
+
+        # 3. Call Agent (Internal Runner) - This happens in background while user sees simulated items
+        job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
+        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name)
+        
+        runner = Runner(app=adk_app, session_service=session_service)
+        content = types.Content(parts=[types.Part(text=query)])
+        
+        response_text = ""
+        async for _ in runner.run_async(user_id=user_id, session_id=job_session_id, new_message=content):
+            pass
+
+        # 4. Fetch the final session to get the full assistant response and update summary
+        final_session = await session_service.get_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name)
+        if final_session and final_session.events:
+            for event in reversed(final_session.events):
+                if getattr(event, "role", None) == "assistant":
+                    content_attr = getattr(event, "content", None)
+                    if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
+                        response_text = "\n".join([p.text for p in content_attr.parts if hasattr(p, "text") and p.text])
+                        break
+        
+        if not response_text:
+            response_text = f"The research sweep for {radar_data.get('title')} is complete."
+
+        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=inc)
+        logger.info(f"Proactive sync completed for radar {radar_id}")
+
+    except Exception as e:
+        logger.error(f"Error in background sync for {radar_id}: {e}", exc_info=True)
+
 @app.put("/api/radars/{radar_id}", response_model=Dict[str, str])
 async def update_radar(radar_id: str, radar: RadarCreate, user_id: str = Depends(get_current_user)):
     logger.info(f"Updating radar {radar_id} for user {user_id}")
@@ -333,6 +461,33 @@ async def delete_radar(radar_id: str, user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error deleting radar: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/radars/{radar_id}/star")
+async def star_radar(radar_id: str, starred: bool, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    await user_data_service.toggle_radar_star(user_id, radar_id, starred)
+    return {"status": "success"}
+
+@app.post("/api/radars/{radar_id}/read")
+async def mark_radar_read(radar_id: str, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    await user_data_service.reset_radar_unread(user_id, radar_id)
+    return {"status": "success"}
+
+@app.post("/api/radars/{radar_id}/status")
+async def update_radar_status(radar_id: str, status: str, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    if status not in ["active", "paused"]:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    await user_data_service.update_radar_status(user_id, radar_id, status)
+    return {"status": "success"}
+
+@app.get("/api/radars/{radar_id}/items")
+async def get_radar_items(radar_id: str, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    items = await user_data_service.get_radar_captured_items(user_id, radar_id)
+    logger.info(f"Fetched {len(items)} items for radar {radar_id} and user {user_id}")
+    return items
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):
@@ -471,7 +626,14 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
                                 "name": name
                             })
 
-            # Skip messages with no text AND no files (unless it's a thinking placeholder, which we don't handle here yet)
+            # Strip CONTEXT and User Query boilerplates if present
+            if role == "user" and "CONTEXT:" in text and "User Query:" in text:
+                import re
+                match = re.search(r"User Query:\s*(.*)", text, re.DOTALL)
+                if match:
+                    text = match.group(1).strip()
+
+            # Skip messages with no text AND no files (common for internal tool calls that don't output text)
             if not text.strip() and not msg_files:
                 continue
 

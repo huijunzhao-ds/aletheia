@@ -38,6 +38,10 @@ interface RadarItem {
     };
     lastUpdated: string;
     status: 'active' | 'paused';
+    latestSummary?: string;
+    isStarred: boolean;
+    capturedCount: number;
+    unreadCount: number;
 }
 
 export const ResearchRadar: React.FC<ResearchRadarProps> = ({
@@ -59,6 +63,19 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
     // State for radars
     const [radars, setRadars] = useState<RadarItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [briefing, setBriefing] = useState<string>('');
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [editingRadarId, setEditingRadarId] = useState<string | null>(null);
+    const [showSyncPrompt, setShowSyncPrompt] = useState(false);
+    const [lastCreatedRadarId, setLastCreatedRadarId] = useState<string | null>(null);
+    const [isBriefingLoading, setIsBriefingLoading] = useState(false);
+    const [menuRadarId, setMenuRadarId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const handleClickOutside = () => setMenuRadarId(null);
+        window.addEventListener('click', handleClickOutside);
+        return () => window.removeEventListener('click', handleClickOutside);
+    }, []);
 
     // Fetch radars on mount
     useEffect(() => {
@@ -88,7 +105,11 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         customPrompt: item.customPrompt || '',
                         arxivConfig: item.arxivConfig,
                         lastUpdated: item.lastUpdated || 'Unknown',
-                        status: item.status || 'active'
+                        status: item.status || 'active',
+                        latestSummary: item.latest_summary,
+                        isStarred: item.isStarred || false,
+                        capturedCount: item.capturedCount || 0,
+                        unreadCount: item.unreadCount || 0
                     }));
                     setRadars(mappedRadars);
                 }
@@ -102,8 +123,34 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
         fetchRadars();
     }, []);
 
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [editingRadarId, setEditingRadarId] = useState<string | null>(null);
+    useEffect(() => {
+        if (radars.length >= 0) {
+            fetchBriefing();
+        }
+    }, [radars.length]);
+
+    const fetchBriefing = async () => {
+        setIsBriefingLoading(true);
+        try {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const token = await user.getIdToken();
+
+            const response = await fetch('/api/radars/briefing', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setBriefing(data.summary);
+            }
+        } catch (error) {
+            console.error("Error fetching briefing:", error);
+        } finally {
+            setIsBriefingLoading(false);
+        }
+    };
+
     const [isSourceDropdownOpen, setIsSourceDropdownOpen] = useState(false);
 
     // Config for Sources
@@ -249,9 +296,11 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         arxivConfig: payload.arxivConfig,
                         lastUpdated: 'Just updated'
                     } : r));
+                    handleCloseModal();
                 } else {
+                    const newId = result.id;
                     const radar: RadarItem = {
-                        id: result.id,
+                        id: newId,
                         title: newRadar.title,
                         description: newRadar.description,
                         sources: newRadar.sources,
@@ -259,12 +308,17 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         outputMedia: newRadar.outputMedia,
                         customPrompt: newRadar.customPrompt,
                         arxivConfig: payload.arxivConfig,
-                        lastUpdated: 'Just now',
-                        status: 'active'
+                        lastUpdated: 'Never',
+                        status: 'active',
+                        isStarred: false,
+                        capturedCount: 0,
+                        unreadCount: 0
                     };
-                    setRadars([...radars, radar]);
+                    setRadars([radar, ...radars]);
+                    setIsCreateModalOpen(false); // Close the creation modal
+                    setLastCreatedRadarId(newId);
+                    setShowSyncPrompt(true); // Open the sync confirmation
                 }
-                handleCloseModal();
             } else {
                 console.error("Failed to save radar");
             }
@@ -286,6 +340,101 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
 
     const removeSource = (source: string) => {
         setNewRadar(prev => ({ ...prev, sources: prev.sources.filter(s => s !== source) }));
+    };
+
+    const handleConfirmSync = async (allow: boolean) => {
+        setShowSyncPrompt(false);
+        if (allow && lastCreatedRadarId) {
+            try {
+                const auth = getAuth();
+                const user = auth.currentUser;
+                if (!user) return;
+                const token = await user.getIdToken();
+
+                // Trigger a sync in the background
+                fetch(`/api/radars/${lastCreatedRadarId}/sync`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                // Update local status to show it's parsing
+                setRadars(prev => prev.map(r => r.id === lastCreatedRadarId ? { ...r, lastUpdated: 'Parsing...' } : r));
+            } catch (error) {
+                console.error("Error triggering sync:", error);
+            }
+        }
+        setLastCreatedRadarId(null);
+        // Reset form for next time
+        setNewRadar({
+            title: '',
+            description: '',
+            sources: [],
+            frequency: 'Daily',
+            outputMedia: 'Text Digest',
+            customPrompt: '',
+            arxivConfig: {
+                categories: '',
+                authors: '',
+                keywords: '',
+                journalReference: ''
+            }
+        });
+    };
+
+    const handleToggleStar = async (e: React.MouseEvent, radarId: string, currentStarred: boolean) => {
+        e.stopPropagation();
+        const newState = !currentStarred;
+        try {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const token = await user.getIdToken();
+
+            setRadars(prev => prev.map(r => r.id === radarId ? { ...r, isStarred: newState } : r));
+
+            await fetch(`/api/radars/${radarId}/star?starred=${newState}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        } catch (error) {
+            console.error("Error toggling star:", error);
+        }
+    };
+
+    const handleMarkRead = async (radarId: string) => {
+        try {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const token = await user.getIdToken();
+
+            setRadars(prev => prev.map(r => r.id === radarId ? { ...r, unreadCount: 0 } : r));
+
+            await fetch(`/api/radars/${radarId}/read`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        } catch (error) {
+            console.error("Error marking read:", error);
+        }
+    };
+
+    const handleUpdateStatus = async (radarId: string, newStatus: 'active' | 'paused') => {
+        try {
+            const auth = getAuth();
+            const user = auth.currentUser;
+            if (!user) return;
+            const token = await user.getIdToken();
+
+            setRadars(prev => prev.map(r => r.id === radarId ? { ...r, status: newStatus } : r));
+
+            await fetch(`/api/radars/${radarId}/status?status=${newStatus}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        } catch (error) {
+            console.error("Error updating radar status:", error);
+        }
     };
 
     const handleDeleteRadar = async (e: React.MouseEvent, id: string) => {
@@ -373,13 +522,31 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                     {/* Page Title & Description */}
                     <div className="relative z-10 mb-12 max-w-4xl">
                         <h2 className="text-4xl font-bold text-white mb-4 tracking-tight">Research Radar</h2>
-                        <p className="text-zinc-400 text-lg leading-relaxed">
-                            Research Radar will allow you to track real-time updates from Arxiv, Tech Blogs, and Social Media.
-                        </p>
+                        <div className={`transition-all duration-700 ${isBriefingLoading ? 'opacity-50' : 'opacity-100'}`}>
+                            {radars.length === 0 ? (
+                                <p className="text-zinc-400 text-lg leading-relaxed">
+                                    {briefing || "Research Radar will allow you to track real-time updates from Arxiv, Tech Blogs, and Social Media."}
+                                </p>
+                            ) : (
+                                <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6 backdrop-blur-sm border-l-4 border-l-blue-500 shadow-xl">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-lg font-medium text-white">Radar Briefing</h3>
+                                    </div>
+                                    <p className="text-zinc-400 leading-relaxed italic">
+                                        "{briefing || "Fetching your latest research updates..."}"
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Radar List Grid */}
-                    <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                         {/* New Radar Card */}
                         <div
                             onClick={handleCreateRadar}
@@ -395,49 +562,184 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
 
                         {/* Existing Radars */}
                         {radars.map((radar) => (
-                            <div key={radar.id} className="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 hover:border-zinc-700 transition-all shadow-lg backdrop-blur-sm group">
-                                <div className="flex justify-between items-start mb-4">
-                                    <h3
-                                        onClick={() => onSelectRadar(radar.id)}
-                                        className="text-xl font-semibold text-white group-hover:text-blue-400 transition-colors cursor-pointer"
-                                    >
-                                        {radar.title}
-                                    </h3>
-                                    <div className="flex items-center gap-2">
+                            <div
+                                key={radar.id}
+                                onClick={() => {
+                                    handleMarkRead(radar.id);
+                                    onSelectRadar(radar.id);
+                                }}
+                                className="bg-[#1a1b2e]/80 border border-zinc-800/50 rounded-[24px] p-7 pt-6 hover:bg-[#1a1b2e] hover:border-zinc-700/50 transition-all shadow-2xl backdrop-blur-md group relative overflow-hidden flex flex-col min-h-[340px]"
+                            >
+                                {/* Header Section */}
+                                <div className="flex justify-between items-center mb-5">
+                                    <div className={`px-4 py-1.5 rounded-full flex items-center gap-2 text-xs font-semibold ${radar.status === 'active' ? 'bg-blue-500/10 text-blue-400' : 'bg-zinc-800/50 text-zinc-500'}`}>
+                                        <div className={`w-1.5 h-1.5 rounded-full ${radar.status === 'active' ? 'bg-blue-400 animate-pulse' : 'bg-zinc-600'}`} />
+                                        {radar.status === 'active' ? 'Active' : 'Paused'}
+                                    </div>
+                                    <div className="flex items-center gap-1">
                                         <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleEditRadar(radar);
-                                            }}
-                                            className="text-zinc-500 hover:text-white transition-colors p-1 rounded-lg hover:bg-zinc-800"
-                                            title="Edit Radar"
+                                            onClick={(e) => handleToggleStar(e, radar.id, radar.isStarred)}
+                                            className={`p-2 rounded-full transition-all ${radar.isStarred ? 'text-yellow-400' : 'text-zinc-500 hover:text-zinc-300'}`}
                                         >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            <svg className="w-5 h-5" fill={radar.isStarred ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.175 0l-3.976 2.888c-.783.57-1.838-.197-1.539-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                             </svg>
                                         </button>
-                                        <button
-                                            onClick={(e) => handleDeleteRadar(e, radar.id)}
-                                            className="text-zinc-500 hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-500/10"
-                                            title="Delete Radar"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                        </button>
-                                        <div className={`w-2 h-2 rounded-full ${radar.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                                        <div className="relative">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setMenuRadarId(menuRadarId === radar.id ? null : radar.id);
+                                                }}
+                                                className="p-2 text-zinc-500 hover:text-zinc-300 transition-all rounded-full hover:bg-zinc-800"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                                                </svg>
+                                            </button>
+
+                                            {menuRadarId === radar.id && (
+                                                <div className="absolute right-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl z-[70] py-2 animate-in fade-in zoom-in duration-200">
+                                                    {radar.status === 'active' ? (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleUpdateStatus(radar.id, 'paused');
+                                                                setMenuRadarId(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            Pause the Radar
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleUpdateStatus(radar.id, 'active');
+                                                                setMenuRadarId(null);
+                                                            }}
+                                                            className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            Reactivate the Radar
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleEditRadar(radar);
+                                                            setMenuRadarId(null);
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors flex items-center gap-2"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                        Edit the Radar
+                                                    </button>
+                                                    <div className="h-px bg-zinc-800 my-1 mx-2" />
+                                                    <button
+                                                        onClick={(e) => {
+                                                            handleDeleteRadar(e, radar.id);
+                                                            setMenuRadarId(null);
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors flex items-center gap-2"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                        Delete the Radar
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                                <p className="text-zinc-400 text-sm mb-6 line-clamp-2">{radar.description}</p>
 
-                                <div className="flex items-center justify-between text-xs text-zinc-500 border-t border-zinc-800/50 pt-4">
-                                    <div className="flex items-center gap-2">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                        </svg>
-                                        <span>{radar.sources.join(', ')}</span>
+                                {/* Title & Description */}
+                                <div className="mb-5 flex-1">
+                                    <h3 className="text-[22px] font-bold text-white mb-3 group-hover:text-blue-400 transition-colors">
+                                        {radar.title}
+                                    </h3>
+                                    <p className="text-zinc-400 text-[15px] leading-relaxed line-clamp-2">
+                                        {radar.description}
+                                    </p>
+                                </div>
+
+                                {/* Tags */}
+                                <div className="flex flex-wrap gap-2 mb-8">
+                                    {(radar.arxivConfig?.keywords || []).slice(0, 3).map((kw, idx) => (
+                                        <span key={idx} className="px-3 py-1.5 bg-zinc-800/40 text-zinc-300 text-xs font-medium rounded-lg border border-zinc-700/30">
+                                            {kw}
+                                        </span>
+                                    ))}
+                                    {(radar.arxivConfig?.keywords || []).length > 3 && (
+                                        <span className="text-zinc-500 text-xs font-medium self-center ml-1">
+                                            +{(radar.arxivConfig?.keywords || []).length - 3}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="mt-auto pt-6 border-t border-zinc-800/50">
+                                    {/* Stats Row */}
+                                    <div className="flex items-center gap-4 mb-6 whitespace-nowrap overflow-hidden">
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                            </svg>
+                                            <span className="text-white font-bold text-[15px]">{radar.capturedCount}</span>
+                                            <span className="text-zinc-500 text-[15px]">captured</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span className="text-blue-400 font-bold text-[15px]">{radar.unreadCount}</span>
+                                            <span className="text-zinc-500 text-[15px]">unread</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 ml-auto text-zinc-500 flex-shrink-0">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span className="text-[14px]">{(radar.lastUpdated || '').replace('2026-', '')}</span>
+                                        </div>
                                     </div>
-                                    <span>{radar.lastUpdated}</span>
+
+                                    {/* Action Box */}
+                                    {radar.latestSummary && (
+                                        <div className="bg-blue-500/5 border border-blue-500/20 rounded-[18px] p-4 flex items-center justify-between hover:bg-blue-500/10 transition-colors group/box">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center text-blue-400 group-hover/box:scale-105 transition-transform">
+                                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z" />
+                                                    </svg>
+                                                </div>
+                                                <div>
+                                                    <div className="text-white font-bold text-sm">
+                                                        {radar.outputMedia === 'Audio Podcast' ? 'Podcast Summary' : 'Insight Digest'}
+                                                    </div>
+                                                    <div className="text-zinc-500 text-xs">today's updates</div>
+                                                </div>
+                                            </div>
+                                            <div className="text-blue-400/60 group-hover/box:text-blue-400 transition-colors">
+                                                {radar.outputMedia === 'Audio Podcast' ? (
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                    </svg>
+                                                ) : (
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -690,6 +992,38 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                 >
                                     {editingRadarId ? 'Save Changes' : 'Create Radar'}
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {showSyncPrompt && (
+                    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-300">
+                            <div className="p-8 text-center">
+                                <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-6">
+                                    <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-2xl font-bold text-white mb-4">Radar Created!</h3>
+                                <p className="text-zinc-400 mb-8 leading-relaxed">
+                                    Would you like the Aletheia agent to parse the latest updates from your sources right now?
+                                    This will prepare your first research summary immediately.
+                                </p>
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={() => handleConfirmSync(true)}
+                                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-900/20"
+                                    >
+                                        Yes, Parse Now
+                                    </button>
+                                    <button
+                                        onClick={() => handleConfirmSync(false)}
+                                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium py-3 rounded-xl transition-all"
+                                    >
+                                        Maybe Later
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
