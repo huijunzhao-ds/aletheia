@@ -36,7 +36,5 @@ export interface RadarItem {
   lastUpdated: string;
   status: 'active' | 'paused';
   latestSummary?: string;
-  isStarred: boolean;
-  capturedCount: number;
-  unreadCount: number;
+
 }

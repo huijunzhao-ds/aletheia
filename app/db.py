@@ -52,6 +52,16 @@ class UserDataService:
             })
             logger.info(f"Initialized user root document for {user_id}")
         
+    async def get_all_users(self):
+        """
+        Returns a list of all user IDs from the users collection.
+        Used for global background sync tasks.
+        """
+        if not self.db:
+            return []
+        users = self.db.collection("users").stream()
+        return [user.id async for user in users]
+        
     # --- Research Radar ---
     def get_radar_collection(self, user_id: str):
         return self._get_user_ref(user_id).collection("radar")
@@ -61,7 +71,12 @@ class UserDataService:
 
     async def get_radar_items(self, user_id: str):
         docs = self.get_radar_collection(user_id).stream()
-        return [doc.to_dict() async for doc in docs]
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            results.append(d)
+        return results
 
     async def update_radar_item(self, user_id: str, radar_id: str, item_data: Dict[str, Any]):
         return await self.get_radar_collection(user_id).document(radar_id).update(item_data)
@@ -75,15 +90,10 @@ class UserDataService:
             "lastUpdated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
         }
         if captured_inc > 0:
-            update_data["capturedCount"] = firestore.Increment(captured_inc)
-            update_data["unreadCount"] = firestore.Increment(captured_inc)
+            pass # capturedCount and unreadCount are deprecated
             
         return await self.get_radar_collection(user_id).document(radar_id).update(update_data)
 
-    async def toggle_radar_star(self, user_id: str, radar_id: str, is_starred: bool):
-        return await self.get_radar_collection(user_id).document(radar_id).update({
-            "isStarred": is_starred
-        })
 
     async def update_radar_status(self, user_id: str, radar_id: str, status: str):
         return await self.get_radar_collection(user_id).document(radar_id).update({
@@ -96,9 +106,7 @@ class UserDataService:
         })
 
     async def reset_radar_unread(self, user_id: str, radar_id: str):
-        return await self.get_radar_collection(user_id).document(radar_id).update({
-            "unreadCount": 0
-        })
+        pass # unreadCount is deprecated
 
     def get_radar_items_collection(self, user_id: str, radar_id: str):
         return self.get_radar_collection(user_id).document(radar_id).collection("captured_items")
@@ -140,7 +148,12 @@ class UserDataService:
 
     async def get_exploration_items(self, user_id: str):
         docs = self.get_exploration_collection(user_id).stream()
-        return [doc.to_dict() async for doc in docs]
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            results.append(d)
+        return results
 
     # --- Projects ---
     def get_projects_collection(self, user_id: str):
@@ -151,7 +164,12 @@ class UserDataService:
 
     async def get_project_items(self, user_id: str):
         docs = self.get_projects_collection(user_id).stream()
-        return [doc.to_dict() async for doc in docs]
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            d["id"] = doc.id
+            results.append(d)
+        return results
 
 # Singleton instance
 user_data_service = UserDataService()

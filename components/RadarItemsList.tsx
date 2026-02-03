@@ -20,6 +20,7 @@ interface RadarItemsListProps {
     onSaveToProject: (item: CapturedItem) => void;
     isLoading: boolean;
     outputMedia?: string;
+    radarName?: string;
 }
 
 export const RadarItemsList: React.FC<RadarItemsListProps> = ({
@@ -30,7 +31,8 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
     onSaveToExploration,
     onSaveToProject,
     isLoading,
-    outputMedia
+    outputMedia,
+    radarName
 }) => {
     const [activeSaveMenu, setActiveSaveMenu] = React.useState<string | null>(null);
 
@@ -120,7 +122,7 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <span className="px-3 py-1 bg-blue-500/10 text-blue-400 text-[11px] font-bold rounded-full border border-blue-500/20">
-                                {item.type || 'Machine Learning'}
+                                {radarName || item.type || 'Research Radar'}
                             </span>
                             <span className="text-zinc-500 text-xs font-medium">
                                 {getRelativeTime(item.timestamp)}
@@ -161,14 +163,7 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
                         {item.summary}
                     </p>
 
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-2 mb-8">
-                        {(item.tags || ['multimodal', 'vision-language', 'transformers']).map((tag, idx) => (
-                            <span key={idx} className="text-zinc-500 text-[11px] font-medium bg-zinc-900/50 px-3 py-1 rounded-md border border-zinc-800/50">
-                                {tag}
-                            </span>
-                        ))}
-                    </div>
+
 
                     {/* Bottom Row: Actions and Source */}
                     <div className="flex items-center justify-between mt-auto">
@@ -219,21 +214,7 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
                                 </div>
                             )}
 
-                            {outputMedia && (outputMedia.toLowerCase().includes('podcast') || outputMedia.toLowerCase().includes('audio')) ? (
-                                <button className="flex items-center gap-2 bg-[#232333] text-zinc-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#2a2a3d] transition-all border border-zinc-700/30">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                                    </svg>
-                                    Podcast
-                                </button>
-                            ) : (
-                                <button className="flex items-center gap-2 bg-[#232333] text-zinc-300 px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#2a2a3d] transition-all border border-zinc-700/30">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Digest
-                                </button>
-                            )}
+
                         </div>
                         <span className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest pt-2">
                             {item.type || 'arXiv'}

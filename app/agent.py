@@ -13,7 +13,7 @@ from app.tools import (
     generate_video_lecture_file,
     list_radars,
     get_radar_details,
-    save_radar_results
+    save_radar_item
 )
 
 # Configure logging
@@ -85,14 +85,19 @@ research_radar_agent = Agent(
     - Use `list_radars` to see all topics the user is tracking.
     - Use `get_radar_details` to get the specific Arxiv filters, keywords, and custom prompts for a radar.
     - Use `search_arxiv`, `web_search`, and `scrape_website` to collect the latest information.
-    - Use `save_radar_results` to store summaries or findings back to the radar history.
+    - Use `save_radar_item` to store a single research digest back to the radar history.
     
     GUIDELINES:
-    1. If the user asks for a report on a radar, fetch its details first.
+    1. If the user asks for a report on a radar, fetch its details first to understand the context and required output format.
     2. Respect the 'Arxiv Configuration' (categories, authors) and 'Custom Prompt' instructions found in the radar settings.
-    3. Return a comprehensive summary of findings. Your task is to gather and synthesize; the coordinator will handle specific media conversions (Audio, PPT) if requested.
+    3. **Crucial**: After collecting papers or information, you MUST use the `save_radar_item` tool to store a high-quality, **detailed research digest** for EACH item independently. 
+       - NEVER bundle multiple papers into a single tool call. 
+       - Call `save_radar_item` exactly once for every discovery. This ensures each item appears as a unique, separate asset in the user's sidebar.
+       - Each summary must be a long-form breakdown (3-4 paragraphs) covering the problem, methodology, and key findings.
+    4. **ID Discipline**: Always use the programmatic ID (e.g., 'abc-123') as the `unique_topic_token` when saving. NEVER use the title of the radar as an ID. If you are unsure of an ID, call `list_radars` to verify it.
+    5. Return a comprehensive synthesis of all findings in your final response.
     """,
-    tools=[list_radars, get_radar_details, save_radar_results, web_search, search_arxiv, scrape_website],
+    tools=[list_radars, get_radar_details, save_radar_item, web_search, search_arxiv, scrape_website],
 )
 
 # 6. Exploration Specialist

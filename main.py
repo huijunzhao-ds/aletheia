@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import sys
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,12 +23,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # ADK and Application Imports
 from google.adk.runners import Runner
-from google.genai import types
+from google.genai import types, Client
 from app.agent import app as adk_app
 from app.schemas import ResearchRequest, ResearchResponse, FileItem
 from app.auth import get_current_user
 from app.sessions import get_session_service
 from app.tools import current_user_id
+from app.title_gen import generate_smart_title
 
 # Initialize session service
 session_service = get_session_service()
@@ -41,6 +43,70 @@ DOCS_DIR = os.path.join(STATIC_DIR, "docs")
 
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(DOCS_DIR, exist_ok=True)
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+# ... (runner logic) ...
+
+# Global Scheduler for proactive features
+scheduler = AsyncIOScheduler()
+
+async def scheduled_radar_sync_all():
+    """
+    Proactive feature: Iterates through all users and all active radars 
+    to perform a research sync at 0:00 every day.
+    """
+    from app.db import user_data_service
+    import datetime
+    
+    logger.info("Starting global proactive radar sync...")
+    user_ids = await user_data_service.get_all_users()
+    
+    today = datetime.datetime.now(datetime.timezone.utc)
+    is_monday = today.weekday() == 0
+    is_first_of_month = today.day == 1
+    
+    sync_count = 0
+    for uid in user_ids:
+        try:
+            radars = await user_data_service.get_radar_items(uid)
+            for radar in radars:
+                if radar.get('status') != 'active':
+                    continue
+                
+                freq = radar.get('frequency', 'Daily')
+                should_run = False
+                
+                if freq == 'Daily':
+                    should_run = True
+                elif freq == 'Weekly' and is_monday:
+                    should_run = True
+                elif freq == 'Monthly' and is_first_of_month:
+                    should_run = True
+                
+                if should_run:
+                    logger.info(f"Proactively syncing radar {radar.get('id')} for user {uid}")
+                    # We run this as a background task to not block the scheduler loop
+                    await execute_radar_sync(uid, radar.get('id'))
+                    sync_count += 1
+        except Exception as e:
+            logger.error(f"Error checking radars for user {uid}: {e}")
+            
+    logger.info(f"Global proactive sync completed. Synced {sync_count} radars.")
+
+@app.on_event("startup")
+async def startup_event():
+    # Schedule the proactive sync at 0:00 every day
+    # Note: Use hour=0, minute=0 for production. Set to shorter for testing if needed.
+    scheduler.add_job(
+        scheduled_radar_sync_all, 
+        CronTrigger(hour=0, minute=0),
+        id="daily_radar_sync",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info("APScheduler started: Daily proactive sync scheduled at 0:00.")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -91,12 +157,15 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         try:
             curr = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
             if not curr.state or "title" not in curr.state:
+                # Generate a smart title
+                session_title = await generate_smart_title(request.query)
+                
                 await session_service.update_session(
                     user_id=user_id, 
                     session_id=session_id, 
                     app_name=adk_app.name,
                     state_update={
-                        "title": request.query[:50] + ("..." if len(request.query) > 50 else "")
+                        "title": session_title
                     }
                 )
         except Exception:
@@ -400,11 +469,12 @@ async def sync_radar(radar_id: str, background_tasks: BackgroundTasks, user_id: 
 
 async def execute_radar_sync(user_id: str, radar_id: str):
     from app.db import user_data_service
-    from app.tools import current_user_id
+    from app.tools import current_user_id, current_radar_id
     from google.adk.runners import Runner
     
     # Set context for the background tool execution
     current_user_id.set(user_id)
+    current_radar_id.set(radar_id)
     
     try:
         # 1. Fetch radar config
@@ -446,41 +516,30 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         
         if real_papers:
             count = 0
-            for paper in real_papers:
-                # Firestore likes datetime objects
-                try:
-                    pub_date = datetime.datetime.strptime(paper["published"], "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
-                except:
-                    pub_date = datetime.datetime.now(datetime.timezone.utc)
-
-                item_data = {
-                    "title": paper["title"],
-                    "summary": paper["summary"][:1000] if paper.get("summary") else "No summary available.",
-                    "url": paper["pdf_url"],
-                    "authors": paper["authors"][:5], # Limit authors for UI
-                    "timestamp": pub_date,
-                    "type": "Arxiv",
-                    "tags": arxiv_config.get('keywords', [])[:3]
-                }
-                await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
-                count += 1
-            
-            logger.info(f"Captured {count} real papers for radar {radar_id}")
-            # Update counts in radar document
-            await user_data_service.save_radar_summary(user_id, radar_id, "", captured_inc=count)
+            # We no longer store the raw papers as captured items.
+            # Instead, we just pass them to the agent to generate summaries.
+            logger.info(f"Found {len(real_papers)} prospective papers for radar {radar_id}")
+            for i, paper in enumerate(real_papers, 1):
+                logger.info(f"  Paper {i}: {paper.get('title', 'N/A')} by {', '.join(paper.get('authors', [])[:3])}")
         else:
             logger.info(f"No papers found for radar {radar_id}")
 
         # 3. Call Agent (Internal Runner)
-        query = f"Please perform a research briefing for my Radar titled '{radar_data.get('title')}'. "
+        # We pass the metadata of found papers so the agent can synthesize and SAVE refined summaries/audio
+        query = f"SYSTEM DIRECTIVE: You MUST perform a research briefing for the following Radar.\n"
+        query += f"TARGET_TITLE: **{radar_data.get('title')}**\n"
+        query += f"TARGET_RADAR_ID: **{radar_id}**\n\n"
+        
         if real_papers:
-            query += f"I have already captured {len(real_papers)} papers for this sweep. "
-            query += "Synthesize the findings of these papers and other relevant news into a concise briefing."
+            query += f"I have found {len(real_papers)} new papers from Arxiv:\n"
+            query += json.dumps(real_papers, indent=2)
+            query += f"\n\nCRITICAL INSTRUCTION: You MUST call the `save_radar_item` tool for EACH paper found. Use the exact ID '{radar_id}' for the `unique_topic_token` argument. Do NOT claim the ID is None. The ID is provided right here: {radar_id}.\n"
+            query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, and the list of authors as `authors`."
         else:
-            query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates."
+            query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates and synthesize a report."
             
         job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
-        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name)
+        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name, state={"radar_id": radar_id})
         
         runner = Runner(app=adk_app, session_service=session_service)
         content = types.Content(parts=[types.Part(text=query)])
@@ -496,13 +555,15 @@ async def execute_radar_sync(user_id: str, radar_id: str):
                 if getattr(event, "role", None) == "assistant":
                     content_attr = getattr(event, "content", None)
                     if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
-                        response_text = "\n".join([p.text for p in content_attr.parts if hasattr(p, "text") and p.text])
+                        response_text = "\n".join([str(p.text or "") for p in content_attr.parts if hasattr(p, "text") and p.text])
                         break
         
         if not response_text:
             response_text = f"The research sweep for {radar_data.get('title')} is complete."
 
-        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=inc)
+        # Note: save_radar_item tool (called by agent) already handles updating the radar summary and capturedCount.
+        # But we ensure it's established here if the agent didn't call it for some reason.
+        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=0)
         logger.info(f"Proactive sync completed for radar {radar_id}")
 
     except Exception as e:
@@ -536,11 +597,6 @@ async def delete_radar(radar_id: str, user_id: str = Depends(get_current_user)):
         logger.error(f"Error deleting radar: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/radars/{radar_id}/star")
-async def star_radar(radar_id: str, starred: bool, user_id: str = Depends(get_current_user)):
-    from app.db import user_data_service
-    await user_data_service.toggle_radar_star(user_id, radar_id, starred)
-    return {"status": "success"}
 
 @app.post("/api/radars/{radar_id}/read")
 async def mark_radar_read(radar_id: str, user_id: str = Depends(get_current_user)):

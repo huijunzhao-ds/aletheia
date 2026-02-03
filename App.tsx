@@ -628,18 +628,94 @@ const App: React.FC = () => {
 
 
   const radarDocuments = radarItems.map(item => {
-    const dateStr = item.timestamp.split('T')[0].replace(/-/g, '');
-    const sanitizedTitle = item.title.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
-    const isPodcast = selectedRadar?.outputMedia?.toLowerCase().includes('podcast');
-    const extension = isPodcast ? 'mp3' : 'md';
-    const typeLabel = isPodcast ? 'podcast' : 'digest';
+    const isSummary = !!item.parent;
+    const dateStr = item.timestamp ? item.timestamp.split('T')[0].replace(/-/g, '') : '20260201';
+    const sanitizedTitle = (item.title || 'summary').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
+
+    // Force .md for all text digests, even if they were legacy Arxiv PDFs
+    let extension = 'md';
+    let assetType = 'markdown';
+
+    if (item.asset_type === 'audio' || (item.asset_url && item.asset_url.endsWith('.mp3'))) {
+      extension = 'mp3';
+      assetType = 'audio';
+    }
+
+    const typeLabel = assetType === 'audio' ? 'podcast' : 'digest';
+
+    // For markdown summaries, if we don't have a real asset_url yet,
+    // we can generate a data URI from the summary text for download
+    let downloadUrl = item.asset_url || item.url || '#';
+    if (assetType === 'markdown' && !item.asset_url && item.summary) {
+      const blob = new Blob([`# ${item.title}\n\n${item.summary}`], { type: 'text/markdown' });
+      downloadUrl = URL.createObjectURL(blob);
+    }
+
     return {
       id: item.id,
       name: `${dateStr}-${sanitizedTitle}-${typeLabel}.${extension}`,
-      url: item.url || '#',
-      isRadarAsset: true
+      url: downloadUrl,
+      isRadarAsset: true,
+      assetType: assetType,
+      summary: item.summary,
+      title: item.title
     };
   });
+
+  const handleSelectRadarAsset = async (doc: any) => {
+    let content = '';
+    let files: any[] = [];
+
+    if (doc.assetType === 'audio') {
+      // For audio podcasts, show a nice header and the audio player
+      content = `## 🎧 ${doc.title}\n\n*Audio Podcast Summary*\n\nListen to the AI-generated podcast summary of today's research findings below.`;
+      files = [{
+        path: doc.url,
+        type: 'mp3',
+        name: doc.name
+      }];
+    } else if (doc.assetType === 'markdown') {
+      // For markdown digests, try to fetch the full content if it's a URL
+      // Otherwise use the summary
+      if (doc.url && doc.url.startsWith('http')) {
+        try {
+          const response = await fetch(doc.url);
+          if (response.ok) {
+            const markdownContent = await response.text();
+            content = markdownContent;
+          } else {
+            content = `# ${doc.title}\n\n${doc.summary}`;
+          }
+        } catch (error) {
+          console.error('Error fetching markdown content:', error);
+          content = `# ${doc.title}\n\n${doc.summary}`;
+        }
+      } else {
+        // Use the summary as markdown content
+        content = `# ${doc.title}\n\n${doc.summary}`;
+      }
+    } else if (doc.assetType === 'pdf') {
+      // For papers, show abstract and provide the file in chat
+      content = `## 📄 ${doc.title}\n\n**Abstract:**\n\n${doc.summary}`;
+      files = [{
+        path: doc.url,
+        type: 'pdf',
+        name: doc.name
+      }];
+    } else {
+      // Default fallback
+      content = `### ${doc.title}\n\n${doc.summary}`;
+    }
+
+    const newMessage: Message = {
+      id: uuidv4(),
+      role: 'assistant',
+      content: content,
+      timestamp: new Date(),
+      files: files
+    };
+    setMessages(prev => [...prev, newMessage]);
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
@@ -654,7 +730,7 @@ const App: React.FC = () => {
         onSelectThread={handleSelectThread}
         onDeleteThread={handleDeleteThread}
         documents={isRadarChat ? radarDocuments : sessionDocuments}
-        onSelectDocument={isRadarChat ? () => { } : setActiveDocument}
+        onSelectDocument={isRadarChat ? handleSelectRadarAsset : setActiveDocument}
         onDeleteDocument={isRadarChat ? handleDeleteRadarItem : undefined}
         onDownloadDocument={handleDownloadDocument}
         activeDocumentUrl={isRadarChat ? undefined : activeDocument?.url}
@@ -681,8 +757,13 @@ const App: React.FC = () => {
               onSaveToExploration={handleSaveToExploration}
               onSaveToProject={handleSaveToProject}
               outputMedia={selectedRadar?.outputMedia || 'Insight Digest'}
+              radarName={selectedRadar?.title}
               onItemClick={(item) => {
-                handleSendMessage(`What are the key findings of the paper titled "${item.title}"?`);
+                // Find the corresponding mapped document
+                const doc = radarDocuments.find(d => d.id === item.id);
+                if (doc) {
+                  handleSelectRadarAsset(doc);
+                }
               }}
             />
           </div>
