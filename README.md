@@ -1,7 +1,9 @@
 
 # Aletheia | Multimedia Research Assistant
 
-A modern research interface separated into a React frontend and a Python backend (ADK-compatible). 
+Aletheia is an advanced, AI-powered multimedia research assistant designed to accelerate discovery and knowledge synthesis. Built with a modern React frontend and a Python backend adaptable to Google's Agent Development Kit (ADK), Aletheia employs a multi-agent orchestration pattern to help users not just search, but deeply explore topics. 
+
+Whether you are tracking emerging trends with automated **Research Radars**, deep-diving into academic papers with the **Exploration** interface, or generating multi-modal outputs like audio podcasts and briefings, Aletheia serves as your intelligent partner in navigating the world's information. 
 
 
 ## 1. Run the App Locally
