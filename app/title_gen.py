@@ -27,7 +27,7 @@ async def generate_smart_title(query: str) -> str:
         """
         
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash-exp",
             config=types.GenerateContentConfig(
                 temperature=0.7,
                 top_p=0.95,

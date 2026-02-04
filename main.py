@@ -75,14 +75,31 @@ async def scheduled_radar_sync_all():
                 if radar.get('status') != 'active':
                     continue
                 
-                freq = radar.get('frequency', 'Daily')
-                should_run = False
-                
-                if freq == 'Daily':
+            freq = radar.get('frequency', 'Daily')
+            
+            # Check last updated to prevent duplicate runs on the same day/session
+            last_updated_str = radar.get('lastUpdated', '')
+            already_run_today = False
+            try:
+                # Format is "%Y-%m-%d %H:%M" in UTC
+                if len(last_updated_str) >= 10:
+                    last_date_str = last_updated_str[:10]
+                    today_str = today.strftime("%Y-%m-%d")
+                    if last_date_str == today_str:
+                         already_run_today = True
+            except Exception:
+                pass
+
+            should_run = False
+            
+            if freq == 'Daily':
+                if not already_run_today:
                     should_run = True
-                elif freq == 'Weekly' and is_monday:
+            elif freq == 'Weekly':
+                if is_monday and not already_run_today:
                     should_run = True
-                elif freq == 'Monthly' and is_first_of_month:
+            elif freq == 'Monthly':
+                if is_first_of_month and not already_run_today:
                     should_run = True
                 
                 if should_run:
@@ -106,7 +123,12 @@ async def startup_event():
         replace_existing=True
     )
     scheduler.start()
-    logger.info("APScheduler started: Daily proactive sync scheduled at 0:00.")
+    
+    # Run a sync check immediately on startup to catch up if missed
+    import asyncio
+    asyncio.create_task(scheduled_radar_sync_all())
+    
+    logger.info("APScheduler started: Daily proactive sync scheduled at 0:00 and initial check triggered.")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -534,7 +556,11 @@ async def execute_radar_sync(user_id: str, radar_id: str):
             query += f"I have found {len(real_papers)} new papers from Arxiv:\n"
             query += json.dumps(real_papers, indent=2)
             query += f"\n\nCRITICAL INSTRUCTION: You MUST call the `save_radar_item` tool for EACH paper found. Use the exact ID '{radar_id}' for the `unique_topic_token` argument. Do NOT claim the ID is None. The ID is provided right here: {radar_id}.\n"
-            query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, and the list of authors as `authors`."
+            query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, the list of authors as `authors`, and the PDF URL as `source_url`."
+            query += "\n\nFINAL OUTPUT REQUIREMENT: "
+            query += "After saving all items, your final text response MUST be a concise but informative 'Briefing Update' for the user. "
+            query += "It should state: 'I found X new papers.' followed by a bulleted list of the papers found with a 1-sentence topic summary for each. "
+            query += "Do not just say 'I have saved the items'. Give the user the high-level news."
         else:
             query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates and synthesize a report."
             
@@ -628,14 +654,59 @@ async def delete_radar_item(radar_id: str, item_id: str, user_id: str = Depends(
 @app.post("/api/exploration/save")
 async def save_to_exploration(item: dict, user_id: str = Depends(get_current_user)):
     from app.db import user_data_service
+    import httpx
     try:
-        # We can reuse the project/exploration pattern
-        # The frontend sends the whole paper object
+        # Check if we have a URL to download
+        source_url = item.get("url") or item.get("pdf_url")
+        if source_url:
+            try:
+                # Determine extension
+                ext = "html"
+                if source_url.lower().endswith(".pdf"):
+                    ext = "pdf"
+                
+                logger.info(f"Downloading content from {source_url}...")
+                async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+                    resp = await client.get(source_url)
+                    if resp.status_code == 200:
+                        # Check content-type header to confirm PDF
+                        ct = resp.headers.get("content-type", "").lower()
+                        if "application/pdf" in ct:
+                            ext = "pdf"
+                        
+                        # Generate filename
+                        safe_title = "".join([c if c.isalnum() else "_" for c in item.get("title", "entitied")])[:50]
+                        filename = f"expl_{uuid.uuid4().hex[:8]}_{safe_title}.{ext}"
+                        local_path = os.path.join(STATIC_DIR, "docs", filename)
+                        
+                        # Write to file
+                        mode = "wb"
+                        with open(local_path, mode) as f:
+                            f.write(resp.content)
+                            
+                        # Update item with local asset path
+                        item["localAssetPath"] = f"/static/docs/{filename}"
+                        item["localAssetType"] = ext
+                        logger.info(f"Saved downloaded content to {local_path}")
+            except Exception as e:
+                logger.error(f"Failed to download exploration content: {e}")
+                # We continue saving the metadata even if download fails
+
         await user_data_service.add_exploration_item(user_id, item)
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error saving to exploration: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/exploration")
+async def get_exploration_items(user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        items = await user_data_service.get_exploration_items(user_id)
+        return {"items": items}
+    except Exception as e:
+        logger.error(f"Error fetching exploration items: {e}")
+        return {"items": []}
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):

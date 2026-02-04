@@ -45,6 +45,7 @@ const App: React.FC = () => {
   const [isRadarItemsLoading, setIsRadarItemsLoading] = useState(false);
   const [radars, setRadars] = useState<{ id: string, title: string }[]>([]);
   const [projects, setProjects] = useState<{ id: string, title: string }[]>([]);
+  const [explorationItems, setExplorationItems] = useState<any[]>([]);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -107,6 +108,15 @@ const App: React.FC = () => {
         if (radarsRes.ok) {
           const radarsData = await radarsRes.json();
           setRadars(radarsData.map((r: any) => ({ id: r.id, title: r.title })));
+        }
+
+        // Fetch exploration items
+        const explRes = await fetch('/api/exploration', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (explRes.ok) {
+          const explData = await explRes.json();
+          setExplorationItems(explData.items || []);
         }
 
         // Projects (placeholder)
@@ -274,36 +284,78 @@ const App: React.FC = () => {
     if (!selectedRadar || !user) return;
 
     setIsRadarItemsLoading(true);
+    // Keep track of initial count to know if we found something new
+    const initialCount = radarItems.length;
+
     try {
       const token = await user.getIdToken();
 
-      // 1. Trigger the background sync
+      // 1. Notify user in chat
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: '_Agent scanning specialized sources for new research papers..._',
+        timestamp: new Date()
+      }]);
+
+      // 2. Trigger the background sync
       const syncResponse = await fetch(`/api/radars/${selectedRadar.id}/sync`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
       if (syncResponse.ok) {
-        setMessages(prev => [...prev, {
-          id: uuidv4(),
-          role: 'assistant',
-          content: '_Agent scanning specialized sources for new research papers..._',
-          timestamp: new Date()
-        }]);
+        // 3. Poll for results (max 20 attempts * 3s = 60s)
+        let attempts = 0;
+        const maxAttempts = 20;
 
-        // 2. Poll/Wait a few seconds for background items to be created
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        while (attempts < maxAttempts) {
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s
 
-        const itemsResponse = await fetch(`/api/radars/${selectedRadar.id}/items`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (itemsResponse.ok) {
-          const items = await itemsResponse.json();
-          setRadarItems(items);
+          try {
+            const itemsResponse = await fetch(`/api/radars/${selectedRadar.id}/items`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (itemsResponse.ok) {
+              const items = await itemsResponse.json();
+
+              // If we found new items (count increased) or if we just wanted *any* items and we got them
+              if (items.length > initialCount) {
+                setRadarItems(items);
+                // Add success message
+                setMessages(prev => [...prev, {
+                  id: uuidv4(),
+                  role: 'assistant',
+                  content: `**Sync Complete.** Found ${items.length - initialCount} new items.`,
+                  timestamp: new Date()
+                }]);
+                break; // Exit polling
+              }
+            }
+          } catch (e) {
+            console.error("Polling error:", e);
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          setMessages(prev => [...prev, {
+            id: uuidv4(),
+            role: 'assistant',
+            content: `Sync timed out or no new items were found.`,
+            timestamp: new Date()
+          }]);
         }
       }
     } catch (error) {
       console.error("Error syncing radar:", error);
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Error syncing radar: ${error}`,
+        timestamp: new Date()
+      }]);
     } finally {
       setIsRadarItemsLoading(false);
     }
@@ -356,6 +408,15 @@ const App: React.FC = () => {
 
   const handleSaveToExploration = async (item: any) => {
     if (!user) return;
+
+    // 1. Notify start
+    setMessages(prev => [...prev, {
+      id: uuidv4(),
+      role: 'assistant',
+      content: `_Downloading "${item.title}" to Exploration..._`,
+      timestamp: new Date()
+    }]);
+
     try {
       const token = await user.getIdToken();
       const response = await fetch('/api/exploration/save', {
@@ -374,9 +435,30 @@ const App: React.FC = () => {
         // Show a brief success toast (using global status for now)
         setCurrentStatus(`Saved "${item.title}" to your exploration.`);
         setTimeout(() => setCurrentStatus(''), 3000);
+
+        // 2. Notify completion
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          role: 'assistant',
+          content: `**Download completed.** \n\nPlease check "Material Articles" in the Exploration view.`,
+          timestamp: new Date()
+        }]);
+
+        // Refresh exploration items to show in sidebar immediately
+        fetch('/api/exploration', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(res => res.json()).then(data => {
+          if (data.items) setExplorationItems(data.items);
+        });
       }
     } catch (error) {
       console.error("Error saving to exploration:", error);
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Failed to save "${item.title}". Please try again.`,
+        timestamp: new Date()
+      }]);
     }
   };
 
@@ -667,8 +749,8 @@ const App: React.FC = () => {
     let files: any[] = [];
 
     if (doc.assetType === 'audio') {
-      // For audio podcasts, show a nice header and the audio player
-      content = `## 🎧 ${doc.title}\n\n*Audio Podcast Summary*\n\nListen to the AI-generated podcast summary of today's research findings below.`;
+      // For audio podcasts, show a nice header, the text summary, AND the audio player
+      content = `## 🎧 ${doc.title}\n\n**Audio Podcast Summary**\n\n${doc.summary}\n\n---\n*Listen to the AI-generated podcast below:*`;
       files = [{
         path: doc.url,
         type: 'mp3',
@@ -717,6 +799,25 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, newMessage]);
   };
 
+  const explorationDocs = explorationItems.map(item => {
+    // Prefer downloaded local asset, fallback to original URL
+    const url = item.localAssetPath || item.url || item.pdf_url || '#';
+    let name = item.title || "Untitled Paper";
+    const ext = item.localAssetType || (url.endsWith('.pdf') ? 'pdf' : 'html');
+
+    // Ensure name has extension
+    if (!name.toLowerCase().endsWith(`.${ext}`)) {
+      name = `${name}.${ext}`;
+    }
+
+    return {
+      id: item.id,
+      name: name,
+      url: url,
+      isRadarAsset: false // Treat as "Material Article"
+    };
+  });
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
       <Sidebar
@@ -729,7 +830,7 @@ const App: React.FC = () => {
         threads={filteredThreads}
         onSelectThread={handleSelectThread}
         onDeleteThread={handleDeleteThread}
-        documents={isRadarChat ? radarDocuments : sessionDocuments}
+        documents={isRadarChat ? radarDocuments : [...explorationDocs, ...sessionDocuments]}
         onSelectDocument={isRadarChat ? handleSelectRadarAsset : setActiveDocument}
         onDeleteDocument={isRadarChat ? handleDeleteRadarItem : undefined}
         onDownloadDocument={handleDownloadDocument}

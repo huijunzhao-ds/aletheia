@@ -85,7 +85,7 @@ research_radar_agent = Agent(
     - Use `list_radars` to see all topics the user is tracking.
     - Use `get_radar_details` to get the specific Arxiv filters, keywords, and custom prompts for a radar.
     - Use `search_arxiv`, `web_search`, and `scrape_website` to collect the latest information.
-    - Use `save_radar_item` to store a single research digest back to the radar history.
+    - Use `save_radar_item` to store a single research digest back to the radar history. Be sure to include the `source_url` (e.g. PDF link) if available.
     
     GUIDELINES:
     1. If the user asks for a report on a radar, fetch its details first to understand the context and required output format.

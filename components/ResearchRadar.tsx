@@ -290,13 +290,12 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         customPrompt: newRadar.customPrompt,
                         arxivConfig: payload.arxivConfig,
                         lastUpdated: 'Never',
-                        status: 'active',
                         status: 'active'
                     };
                     setRadars([radar, ...radars]);
                     setIsCreateModalOpen(false); // Close the creation modal
-                    setLastCreatedRadarId(newId);
-                    setShowSyncPrompt(true); // Open the sync confirmation
+                    // Removed prompt per user request
+                    setLastCreatedRadarId(null);
                 }
             } else {
                 console.error("Failed to save radar");
@@ -907,38 +906,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                         </div>
                     </div>
                 )}
-                {showSyncPrompt && (
-                    <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-                        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-                            <div className="p-8 text-center">
-                                <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-6">
-                                    <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-2xl font-bold text-white mb-4">Radar Created!</h3>
-                                <p className="text-zinc-400 mb-8 leading-relaxed">
-                                    Would you like the Aletheia agent to parse the latest updates from your sources right now?
-                                    This will prepare your first research summary immediately.
-                                </p>
-                                <div className="flex flex-col gap-3">
-                                    <button
-                                        onClick={() => handleConfirmSync(true)}
-                                        className="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-900/20"
-                                    >
-                                        Yes, Parse Now
-                                    </button>
-                                    <button
-                                        onClick={() => handleConfirmSync(false)}
-                                        className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium py-3 rounded-xl transition-all"
-                                    >
-                                        Maybe Later
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+
             </main>
         </div>
     );
