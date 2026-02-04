@@ -28,6 +28,7 @@ class ResearchRequest(BaseModel):
     files: List[dict] = []
     sessionId: Optional[str] = None
     radarId: Optional[str] = None
+    activeDocumentUrl: Optional[str] = None
 
 class ResearchResponse(BaseModel):
     content: str

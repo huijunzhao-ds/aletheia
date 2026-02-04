@@ -8,10 +8,9 @@ A modern research interface separated into a React frontend and a Python backend
 
 ## Prerequisites
 
-- **Python 3.10+** (managed via uv)
+- **Python 3.10+** (managed via [uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Node.js** (for frontend development)
 - **Google Gemini API Key** (set in `.env` as `GOOGLE_API_KEY`)
-- **uv**: [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ### Environment Setup
 
@@ -23,7 +22,7 @@ GOOGLE_API_KEY="your-google-gemini-api-key"
 
 ### Backend Setup
 
-The backend is built with FastAPI and Google's Agent Development Kit (ADK). It is managed using `uv`.
+The backend is built with FastAPI and Google's Agent Development Kit (ADK).
 
 ```bash
 # 1. Create virtual environment
@@ -38,9 +37,7 @@ uv pip install -r requirements.txt
 # 4. Run the server
 uvicorn main:app --reload --port 8000
 ```
-The backend will start at `http://localhost:8000`. It includes:
-- **Agent Endpoint**: `POST /api/research` handling the ReAct agent logic.
-- **Static Files**: Serves generated audio/video/slides from `/static` at `http://localhost:8000/static`.
+The backend will start at `http://localhost:8000`. 
 
 ### Frontend Setup
 
@@ -151,28 +148,15 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
-- [x] Test and improve chat features 
-    - [x] Improve input and output experience
-    - [x] Add session management and history 
-    - [x] Enable side-by-side doc visualization and chat 
-    - [x] Improve agent prompt and logic 
-
-- [ ] Update UI/UX (WIP)
-    - [x] Redesign UI
-    - [x] Update research radar (WIP)
-    - [ ] Update exploration
-    - [ ] Update projects
-    
-  
-- [ ] Test and improve audio features (WIP)
-    - [ ] Add data collection for radar (WIP)
-    - [ ] Add radar summary
-    - [ ] Enhance audio generation
-    - [ ] Add proactive agent features
-    
-- [ ] Test and improve presentation features
-- [ ] Test and improve video features
+- [x] Implement radar features
+- [x] Implement exploration features
+- [ ] Implement projects features (WIP)
+- [ ] Add a user help agent
+- [ ] Add presentation features
+- [ ] Add video features
 - [ ] Add personal knowledge and information sources
 - [ ] Add memory management and personalization
+- [ ] Add social and share features
+
 
 

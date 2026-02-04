@@ -155,6 +155,12 @@ class UserDataService:
             results.append(d)
         return results
 
+    async def update_exploration_item(self, user_id: str, item_id: str, data: Dict[str, Any]):
+        return await self.get_exploration_collection(user_id).document(item_id).update(data)
+
+    async def delete_exploration_item(self, user_id: str, item_id: str):
+        return await self.get_exploration_collection(user_id).document(item_id).delete()
+
     # --- Projects ---
     def get_projects_collection(self, user_id: str):
         return self._get_user_ref(user_id).collection("projects")

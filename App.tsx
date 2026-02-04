@@ -149,6 +149,8 @@ const App: React.FC = () => {
     }
   };
 
+
+
   const handleSignOut = () => signOut(auth);
 
   const handleSelectThread = async (id: string) => {
@@ -462,11 +464,79 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSaveToProject = (item: any) => {
-    // Selection of project will be implemented later
-    console.log("Saving to project - logic to be implemented:", item);
-    setCurrentStatus(`Choosing project for "${item.title}" (Coming Soon)`);
-    setTimeout(() => setCurrentStatus(''), 3000);
+  const handleSaveToProject = async (item: any) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+
+      const payload = {
+        title: item.title || item.name,
+        summary: item.summary,
+        url: item.url,
+        source: 'Exploration'
+      };
+
+      const response = await fetch('/api/projects/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          role: 'assistant',
+          content: `Saved **${payload.title}** to Projects.`,
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error("Error saving to project:", error);
+    }
+  };
+
+  const handleArchiveExplorationItem = async (doc: any, archived: boolean) => {
+    if (!user || !doc.id) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/exploration/${doc.id}/archive?archived=${archived}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        // Update local state by toggling the isArchived flag
+        setExplorationItems(prev => prev.map(item =>
+          item.id === doc.id ? { ...item, isArchived: archived } : item
+        ));
+
+        // If we don't have isArchived in the API response yet, we trust the toggle.
+        // Also update explorationDocs implicitly via mapStateToProps logic (which we handle below in rendering)
+      }
+    } catch (error) {
+      console.error("Error archiving item:", error);
+    }
+  };
+
+  const handleDeleteExplorationItem = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Are you sure you want to delete this specific article?")) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/exploration/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        setExplorationItems(prev => prev.filter(item => item.id !== id));
+      }
+    } catch (error) {
+      console.error("Error deleting exploration item:", error);
+    }
   };
 
   const handleSendMessage = async (content: string, files: File[] = []) => {
@@ -536,7 +606,8 @@ const App: React.FC = () => {
           query: content,
           sessionId: sessionId,
           files: uploadedFiles,
-          radarId: currentView === 'radar-chat' ? selectedRadar?.id : null
+          radarId: currentView === 'radar-chat' ? selectedRadar?.id : null,
+          activeDocumentUrl: (!isRadarChat && activeDocument) ? activeDocument.url : null
         }),
       });
 
@@ -630,7 +701,7 @@ const App: React.FC = () => {
   const isRadarChat = currentView === 'radar-chat';
   const filteredThreads = isRadarChat
     ? threads.filter(t => t.radarId === selectedRadar?.id)
-    : threads.filter(t => !t.radarId);
+    : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
 
   // Dashboard View
   if (currentView === 'dashboard') {
@@ -814,9 +885,30 @@ const App: React.FC = () => {
       id: item.id,
       name: name,
       url: url,
-      isRadarAsset: false // Treat as "Material Article"
+      isRadarAsset: false, // Treat as "To Review"
+      isArchived: item.isArchived || false,
+      summary: item.summary,
+      title: item.title
     };
   });
+
+  const handleNavigate = async (view: string) => {
+    if (view === currentView) return;
+
+    // If leaving radar context to exploration, reset session to ensure independence
+    if (view === 'exploration' && (currentView === 'radar-chat' || selectedRadar)) {
+      // Option: Try to resume the last "exploration" (non-radar) thread
+      const lastExplorationThread = threads.find(t => !t.radarId);
+      if (lastExplorationThread) {
+        await handleSelectThread(lastExplorationThread.id);
+      } else {
+        resetSession();
+      }
+      setSelectedRadar(null);
+    }
+    // If entering specific other views, just switch
+    setCurrentView(view as ViewState);
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
@@ -832,8 +924,10 @@ const App: React.FC = () => {
         onDeleteThread={handleDeleteThread}
         documents={isRadarChat ? radarDocuments : [...explorationDocs, ...sessionDocuments]}
         onSelectDocument={isRadarChat ? handleSelectRadarAsset : setActiveDocument}
-        onDeleteDocument={isRadarChat ? handleDeleteRadarItem : undefined}
+        onDeleteDocument={isRadarChat ? handleDeleteRadarItem : handleDeleteExplorationItem}
         onDownloadDocument={handleDownloadDocument}
+        onArchiveDocument={!isRadarChat ? handleArchiveExplorationItem : undefined}
+        onSaveToProject={handleSaveToProject}
         activeDocumentUrl={isRadarChat ? undefined : activeDocument?.url}
       />
       <main className="flex-1 flex overflow-hidden relative">
@@ -882,7 +976,7 @@ const App: React.FC = () => {
           <div className="absolute top-4 right-4 z-50">
             <NavBar
               currentView={currentView}
-              onNavigate={(view: string) => setCurrentView(view as ViewState)}
+              onNavigate={handleNavigate}
               userPhoto={user?.photoURL}
               userName={user?.displayName}
               onSignOut={handleSignOut}

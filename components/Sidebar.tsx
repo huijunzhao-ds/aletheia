@@ -10,15 +10,17 @@ interface SidebarProps {
   onNewConversation?: () => void;
   threads?: { id: string, title: string }[];
   onSelectThread?: (id: string) => void;
-  documents?: { id?: string, name: string, url: string, isRadarAsset?: boolean }[];
+  documents?: { id?: string, name: string, url: string, isRadarAsset?: boolean, isArchived?: boolean, summary?: string, title?: string }[];
   onSelectDocument?: (doc: { id?: string, name: string, url: string, isRadarAsset?: boolean }) => void;
   onDeleteDocument?: (id: string) => void;
   onDownloadDocument?: (doc: { name: string, url: string }) => void;
+  onArchiveDocument?: (doc: any, archived: boolean) => void;
+  onSaveToProject?: (doc: any) => void;
   onDeleteThread?: (id: string) => void;
   activeDocumentUrl?: string;
 }
 
-type SectionKey = 'articles' | 'multimedia' | 'archived' | 'history';
+type SectionKey = 'toReview' | 'outputs' | 'reviewed' | 'myChats';
 
 export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
@@ -33,6 +35,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectDocument,
   onDeleteDocument,
   onDownloadDocument,
+  onArchiveDocument,
+  onSaveToProject,
   onDeleteThread,
   activeDocumentUrl
 }) => {
@@ -45,39 +49,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [activeMenuId]);
 
   const [expandedSections, setExpandedSections] = useState<Record<SectionKey, boolean>>({
-    articles: false,
-    multimedia: false,
-    archived: false,
-    history: false
+    toReview: false,
+    outputs: false,
+    reviewed: false,
+    myChats: false
   });
 
-  // Helper to filter documents based on extension for demo purposes
-  const articleDocs = documents.filter(d => !d.isRadarAsset && !d.name.match(/\.(mp4|mp3|wav|mov|md)$/i));
-  const mediaDocs = documents.filter(d => d.isRadarAsset || d.name.match(/\.(mp4|mp3|wav|mov|md)$/i));
+  // Helper to filter documents
+  const isMedia = (name: string) => name.match(/\.(mp4|mp3|wav|mov|md)$/i);
+
+  const articleDocs = documents.filter(d => !d.isRadarAsset && !d.isArchived && !isMedia(d.name));
+  const mediaDocs = documents.filter(d => (d.isRadarAsset || isMedia(d.name)) && !d.isArchived);
+  const archivedDocs = documents.filter(d => d.isArchived);
 
   // Auto-collapse/expand based on content presence
   useEffect(() => {
     setExpandedSections(prev => ({
       ...prev,
-      articles: articleDocs.length > 0,
-      multimedia: mediaDocs.length > 0,
-      history: threads.length > 0 && !prev.history ? true : prev.history
+      toReview: articleDocs.length > 0,
+      outputs: mediaDocs.length > 0,
+      reviewed: archivedDocs.length > 0,
+      myChats: threads.length > 0 && !prev.myChats ? true : prev.myChats
     }));
-  }, [articleDocs.length, mediaDocs.length, threads.length]);
+  }, [articleDocs.length, mediaDocs.length, archivedDocs.length, threads.length]);
 
   // Specific "show as closed if empty" global rule
   useEffect(() => {
-    if (articleDocs.length === 0) setExpandedSections(p => ({ ...p, articles: false }));
-    if (mediaDocs.length === 0) setExpandedSections(p => ({ ...p, multimedia: false }));
-    if (threads.length === 0) setExpandedSections(p => ({ ...p, history: false }));
-  }, [articleDocs.length, mediaDocs.length, threads.length]);
+    if (articleDocs.length === 0) setExpandedSections(p => ({ ...p, toReview: false }));
+    if (mediaDocs.length === 0) setExpandedSections(p => ({ ...p, outputs: false }));
+    if (archivedDocs.length === 0) setExpandedSections(p => ({ ...p, reviewed: false }));
+    if (threads.length === 0) setExpandedSections(p => ({ ...p, myChats: false }));
+  }, [articleDocs.length, mediaDocs.length, archivedDocs.length, threads.length]);
 
   const toggleSection = (section: SectionKey) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
-
-  // Helper to filter documents based on extension for demo purposes
-  // In a real app, 'documents' should have a 'type' field.
 
   return (
     <aside
@@ -104,24 +110,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
 
-        {/* Material Articles Section */}
+        {/* To Review Section */}
         <div className="border-b border-zinc-800/50 pb-1">
           <button
-            onClick={() => toggleSection('articles')}
+            onClick={() => toggleSection('toReview')}
             className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
           >
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
               </svg>
-              <span>Material Articles</span>
+              <span>To Review</span>
             </div>
-            <svg className={`w-3 h-3 transition-transform ${expandedSections.articles ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3 h-3 transition-transform ${expandedSections.toReview ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
 
-          {expandedSections.articles && (
+          {expandedSections.toReview && (
             <div className="pl-4 pr-2 space-y-0.5 mt-1">
               {articleDocs.map((doc, idx) => (
                 <div
@@ -154,21 +160,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
 
                     {activeMenuId === `art-${idx}` && (
-                      <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+                      <div className="absolute right-0 top-full mt-1 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
                         <button
                           onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                           </svg>
                           Download
                         </button>
+
+                        {onSaveToProject && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onSaveToProject(doc); setActiveMenuId(null); }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                            Save to Project
+                          </button>
+                        )}
+
+                        {onArchiveDocument && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onArchiveDocument(doc, true); setActiveMenuId(null); }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                            </svg>
+                            Archive
+                          </button>
+                        )}
+
                         <button
                           onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
-                          className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2"
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2 border-t border-zinc-700 mt-1 pt-1"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                           Delete
@@ -185,10 +216,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Multi-media Assets Section */}
+        {/* Outputs Section */}
         <div className="border-b border-zinc-800/50 pb-1">
           <button
-            onClick={() => toggleSection('multimedia')}
+            onClick={() => toggleSection('outputs')}
             className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
           >
             <div className="flex items-center gap-2">
@@ -196,14 +227,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>Multi-media Assets</span>
+              <span>Outputs</span>
             </div>
-            <svg className={`w-3 h-3 transition-transform ${expandedSections.multimedia ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3 h-3 transition-transform ${expandedSections.outputs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
 
-          {expandedSections.multimedia && (
+          {expandedSections.outputs && (
             <div className="pl-4 pr-2 space-y-0.5 mt-1">
               {mediaDocs.map((doc, idx) => (
                 <div
@@ -267,49 +298,126 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ))}
               {mediaDocs.length === 0 && (
-                <div className="px-3 py-2 text-xs text-zinc-600 italic">No media assets</div>
+                <div className="px-3 py-2 text-xs text-zinc-600 italic">No outputs</div>
               )}
             </div>
           )}
         </div>
 
-        {/* Archived References Section */}
+        {/* Reviewed Section */}
         <div className="border-b border-zinc-800/50 pb-1">
           <button
-            onClick={() => toggleSection('archived')}
+            onClick={() => toggleSection('reviewed')}
             className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
           >
             <div className="flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
               </svg>
-              <span>Archived References</span>
+              <span>Reviewed</span>
             </div>
-            <svg className={`w-3 h-3 transition-transform ${expandedSections.archived ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className={`w-3 h-3 transition-transform ${expandedSections.reviewed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </button>
 
-          {expandedSections.archived && (
+          {expandedSections.reviewed && (
             <div className="pl-4 pr-2 space-y-0.5 mt-1">
-              <div className="px-3 py-2 text-xs text-zinc-600 italic">No archived items</div>
+              {archivedDocs.map((doc, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => onSelectDocument?.(doc)}
+                  className={`px-3 py-2 text-sm rounded cursor-pointer flex items-center justify-between group transition-colors opacity-75 hover:opacity-100 ${activeDocumentUrl === doc.url
+                    ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent'
+                    }`}
+                  title={doc.name}
+                >
+                  <span className="truncate flex-1 italic">{doc.name}</span>
+
+                  <div className="relative">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(activeMenuId === `arch-${idx}` ? null : `arch-${idx}`);
+                      }}
+                      className="p-1 hover:bg-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <svg className="w-3.5 h-3.5 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12 8a2 2 0 100-4 2 2 0 000 4zM12 14a2 2 0 100-4 2 2 0 000 4zM12 20a2 2 0 100-4 2 2 0 000 4z" />
+                      </svg>
+                    </button>
+
+                    {activeMenuId === `arch-${idx}` && (
+                      <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download
+                        </button>
+
+                        {onSaveToProject && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onSaveToProject(doc); setActiveMenuId(null); }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                            Save to Project
+                          </button>
+                        )}
+
+                        {onArchiveDocument && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onArchiveDocument(doc, false); setActiveMenuId(null); }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Restore to Active
+                          </button>
+                        )}
+
+                        <button
+                          onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2 border-t border-zinc-700 mt-1 pt-1"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {archivedDocs.length === 0 && (
+                <div className="px-3 py-2 text-xs text-zinc-600 italic">No reviewed items</div>
+              )}
             </div>
           )}
         </div>
 
-        {/* History Chats Section */}
+        {/* My Chats Section */}
         <div className="pb-1">
           <div className="flex items-center justify-between pr-2">
             <button
-              onClick={() => toggleSection('history')}
+              onClick={() => toggleSection('myChats')}
               className="flex items-center justify-between p-2 flex-1 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors text-left"
             >
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
-                <span>History Chats</span>
-                <svg className={`w-3 h-3 transition-transform ${expandedSections.history ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <span>My Chats</span>
+                <svg className={`w-3 h-3 transition-transform ${expandedSections.myChats ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
@@ -326,7 +434,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
 
-          {expandedSections.history && (
+          {expandedSections.myChats && (
             <div className="pl-4 pr-2 space-y-0.5 mt-1">
               {threads.map((thread) => (
                 <div
@@ -348,7 +456,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onDeleteThread?.(thread.id);
                       }
                     }}
-                    className="p-1 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                    className="p-1 hover:bg-red-900/50 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100"
                     title="Delete Chat"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -358,7 +466,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ))}
               {threads.length === 0 && (
-                <div className="px-3 py-2 text-xs text-zinc-600 italic">No recent chats</div>
+                <div className="px-3 py-2 text-xs text-zinc-600 italic">No chats yet</div>
               )}
             </div>
           )}

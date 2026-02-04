@@ -216,6 +216,18 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             except Exception as e:
                 logger.error(f"Error fetching radar context: {e}")
 
+        # If activeDocumentUrl is present (Exploration or Radar Chat), provide context
+        if request.activeDocumentUrl:
+            context_note = f"\n\nCONTEXT: The user is currently reading/viewing the document at: {request.activeDocumentUrl}"
+            # Helper logic: if it's a local file, we might want to hint the agent to look for it, 
+            # though usually the URL is enough if it matches a 'list_exploration_items' entry.
+            if "static/docs/" in request.activeDocumentUrl:
+                filename = request.activeDocumentUrl.split('/')[-1]
+                context_note += f"\nThis is a locally saved file named '{filename}'."
+            
+            query_text += context_note
+            logger.info(f"Injected active document context: {request.activeDocumentUrl}")
+
         parts = [types.Part(text=query_text)]
         uploaded_doc_metadata = []
         
@@ -707,6 +719,42 @@ async def get_exploration_items(user_id: str = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching exploration items: {e}")
         return {"items": []}
+
+@app.put("/api/exploration/{item_id}/archive")
+async def archive_exploration_item(item_id: str, archived: bool, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        await user_data_service.update_exploration_item(user_id, item_id, {"isArchived": archived})
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error archiving item: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/exploration/{item_id}")
+async def delete_exploration_item(item_id: str, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        await user_data_service.delete_exploration_item(user_id, item_id)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error deleting exploration item: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/projects/save")
+async def save_to_project(item: dict, user_id: str = Depends(get_current_user)):
+    from app.db import user_data_service
+    try:
+        # We might want to remove 'id' if successful to create a NEW id for the project item? 
+        # Or keep it as a reference? Usually standard to clean 'id' before adding new doc.
+        item_data = item.copy()
+        if "id" in item_data:
+            del item_data["id"]
+        
+        await user_data_service.add_project_item(user_id, item_data)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error saving to project: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):

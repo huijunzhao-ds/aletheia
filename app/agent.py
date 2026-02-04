@@ -13,7 +13,8 @@ from app.tools import (
     generate_video_lecture_file,
     list_radars,
     get_radar_details,
-    save_radar_item
+    save_radar_item,
+    list_exploration_items
 )
 
 # Configure logging
@@ -106,9 +107,16 @@ exploration_agent = Agent(
     model=Gemini(model="gemini-2.5-flash", api_key=api_key),
     instruction="""You are an Exploration & Discovery Expert.
     Your goal is to help users browse and discover new research trends.
-    (Note: This module is under development. For now, provide helpful search summaries).
+    
+    You have access to the user's "To Review" list (saved Exploration Items).
+    - Use `list_exploration_items` to see what papers/articles the user has saved in their "To Review" list.
+    - If the user discusses a specific paper from that list, you can assume context about it.
+    - If needed, use `web_search` or `search_arxiv` to find more related papers.
+    - If providing a response about a paper, try to check if it's in their list.
+    
+    When discussing a paper that the user has saved (locally or as a link), refer to it clearly.
     """,
-    tools=[web_search, search_arxiv, scrape_website],
+    tools=[web_search, search_arxiv, scrape_website, list_exploration_items],
 )
 
 # 7. Project Specialist

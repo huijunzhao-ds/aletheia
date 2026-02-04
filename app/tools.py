@@ -358,3 +358,32 @@ async def save_radar_item(unique_topic_token: str, item_title: str, item_summary
     except Exception as e:
         logger.error(f"Error in save_radar_item tool: {e}")
         return f"Failed to save result: {e}"
+
+async def list_exploration_items() -> str:
+    """
+    Lists the items (articles, papers) saved in the user's Exploration / To Review list.
+    Returns the title, summary (brief), and original URL or file path for each item.
+    Use this to understand what documents the user has available for deep reading.
+    """
+    from app.db import user_data_service
+    user_id = current_user_id.get()
+    if not user_id:
+        return "Error: No user context found."
+    
+    try:
+        items = await user_data_service.get_exploration_items(user_id)
+        if not items:
+            return "No items found in 'To Review' list."
+            
+        summary_list = []
+        for item in items:
+            title = item.get('title', 'Untitled')
+            url = item.get('url') or item.get('pdf_url') or item.get('web_url') or "No URL"
+            local_path = item.get('localAssetPath', "Not downloaded")
+            desc = (item.get('summary') or '')[:100] + "..."
+            summary_list.append(f"- Title: {title}\n  URL: {url}\n  Local Path: {local_path}\n  Snippet: {desc}\n")
+            
+        return "Found the following items in 'To Review' list:\n" + "\n".join(summary_list)
+    except Exception as e:
+        logger.error(f"Error listing exploration items: {e}")
+        return f"Failed to list items: {e}"
