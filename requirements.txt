@@ -16,3 +16,4 @@ firebase-admin
 google-cloud-firestore
 httpx
 pyjwt[crypto]
+apscheduler

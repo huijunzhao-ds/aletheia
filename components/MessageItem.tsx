@@ -13,10 +13,43 @@ interface MessageItemProps {
 
 export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, userPhoto }) => {
   const isAssistant = message.role === 'assistant';
+  const isSystem = message.role === 'system';
+  const isTool = message.role === 'tool';
+  const isUser = message.role === 'user';
+
+  if (isSystem || isTool) {
+    return (
+      <div className="flex items-start w-full mb-6 px-4 animate-in fade-in slide-in-from-left-2 duration-300">
+        <div className="mr-3 mt-1 flex-shrink-0">
+          <div className="w-6 h-6 rounded-md bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
+            {isSystem ? (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 pb-2 border-l-2 border-zinc-800/30 pl-4">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-1">
+            {isSystem ? 'System Logic' : 'Agent Action'}
+          </div>
+          <div className="text-sm text-zinc-500 leading-relaxed font-mono opacity-80 line-clamp-6 hover:line-clamp-none transition-all cursor-pointer">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500 w-full mb-6`}>
-      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${!isAssistant ? 'flex-row-reverse space-x-reverse' : ''}`}>
+      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
         {/* Avatar */}
         <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 overflow-hidden ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
           }`}>
@@ -36,7 +69,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, 
         </div>
 
         {/* Message Content Container */}
-        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${!isAssistant ? 'items-end' : 'items-start'}`}>
+        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
           <div className={`px-5 py-4 rounded-2xl shadow-sm leading-relaxed text-[15px] border w-full ${isAssistant
             ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none'
             : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
@@ -121,6 +154,116 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, 
   );
 };
 
+const AudioPlayer: React.FC<{
+  file: GeneratedFile,
+  isAssistant: boolean
+}> = ({ file, isAssistant }) => {
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '0:00';
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-md animate-in zoom-in-95 duration-300">
+      <div className="flex items-center space-x-3 mb-4">
+        <div className="p-2.5 bg-indigo-500/20 rounded-lg">
+          <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
+        </div>
+        <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex-1 truncate">{file.name}</span>
+      </div>
+
+      <audio
+        ref={audioRef}
+        src={file.path}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      <div className="space-y-3">
+        {/* Timeline */}
+        <div className="relative">
+          <input
+            type="range"
+            min="0"
+            max={duration || 0}
+            value={currentTime}
+            onChange={handleSeek}
+            className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400"
+            style={{
+              background: `linear-gradient(to right, rgb(99 102 241) 0%, rgb(99 102 241) ${(currentTime / duration) * 100}%, rgb(39 39 42) ${(currentTime / duration) * 100}%, rgb(39 39 42) 100%)`
+            }}
+          />
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={togglePlay}
+            className="p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-full transition-all shadow-lg hover:shadow-indigo-500/20"
+          >
+            {isPlaying ? (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
+            <span>{formatTime(currentTime)}</span>
+            <span>/</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MediaRenderer: React.FC<{
   file: GeneratedFile,
   onFileClick?: (file: GeneratedFile) => void,
@@ -152,22 +295,7 @@ const MediaRenderer: React.FC<{
         </button>
       );
     case 'mp3':
-      return (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 shadow-md animate-in zoom-in-95 duration-300">
-          <div className="flex items-center space-x-3 mb-1">
-            <div className="p-2 bg-indigo-500/20 rounded-lg">
-              <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-            </div>
-            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">{file.name}</span>
-          </div>
-          <audio controls className="w-full h-10 accent-indigo-500">
-            <source src={file.path} type="audio/mpeg" />
-            Your browser does not support the audio element.
-          </audio>
-        </div>
-      );
+      return <AudioPlayer file={file} isAssistant={isAssistant} />;
     case 'mp4':
       return (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-md animate-in zoom-in-95 duration-300">
