@@ -128,12 +128,29 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 ## 3. Architecture
 
-- **`main.py`**: FastAPI entry point. It wraps the `root_agent` from `app/agent.py`.
-- **`app/`**: Contains the ADK agent logic, tools, and multimodal generation code (merged from `deep-search`).
-- **`static/`**: Stores generated files (audio, video, slides).
-- **Frontend**: React + Vite + Tailwind CSS.
+Aletheia uses a **multi-agent orchestration** pattern powered by Google's Agent Development Kit (ADK) and Gemini 2.0.
 
-## 4. Development Notes and Contribution Guidelines
+- **`root_agent` (Router)**: The main entry point that analyzes user intent and routes tasks to specialists.
+- **Specialist Agents**:
+    - **`research_radar_specialist`**: Manages "Research Radars" (automated recurring research feeds) and handles questions about specific radars.
+    - **`exploration_specialist`**: Handles general queries and browsing. It has access to your "To Review" list (saved papers) to provide context-aware answers.
+    - **`search_specialist`**: Performs deep multi-step web and academic research using Google Search and Arxiv.
+    - **`project_specialist`** *(WIP)*: Manages long-term research projects and artifacts.
+- **Multimedia Generation**: Dedicated tools for generating audio podcasts, markdown reports, and (future) video/slides.
+- **Frontend**: React + Vite + Tailwind CSS with a responsive Sidebar UI.
+
+## 4. Key Features & UI Guide
+
+- **Dashboard**: High-level overview of your research activities.
+- **Research Radar**: Create automated agents that monitor specific topics (e.g., "GenAI Trends") daily/weekly and generate digests.
+- **Exploration**: A chat-first interface for deep-diving into topics.
+    - **To Review**: Articles and papers you've saved for later reading. The AI has direct access to these.
+    - **Outputs**: Generated assets like Audio Podcasts, Markdown Reports, and PDFs.
+    - **Reviewed**: Archive of papers you've finished reading.
+    - **My Chats**: History of your research conversations.
+- **Projects** *(Coming Soon)*: Organize your research into structured collections.
+
+## 5. Development Notes and Contribution Guidelines
 
 - **Multimedia**: The application uses `ffmpeg` for video generation. The provided `Dockerfile` automates this installation.
 - **Frontend/Backend Integration**: In production, the FastAPI server serves the React frontend from the `dist` directory. Running `npm run build` locally is recommended before building the Docker image.
@@ -144,7 +161,7 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - Commit your changes and push to your branch
     - Merge into `feature/cloud_deploy` first and GitHub Actions will deploy to Cloud Run automatically. If it works as expected, create a pull request and merge into `main`.
 
-## 5. TO-DOs
+## 6. TO-DOs
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
