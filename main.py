@@ -893,12 +893,18 @@ async def get_session_history(session_id: str, user_id: str = Depends(get_curren
                                 "name": name
                             })
 
-            # Strip CONTEXT and User Query boilerplates if present
-            if role == "user" and "CONTEXT:" in text and "User Query:" in text:
-                import re
-                match = re.search(r"User Query:\s*(.*)", text, re.DOTALL)
-                if match:
-                    text = match.group(1).strip()
+            # Clean up User prompts that include internal context or directives
+            if role == "user":
+                # 1. Hide System Directives (automated Radar syncs)
+                if "SYSTEM DIRECTIVE:" in text:
+                    text = "" # Will be skipped below if no files
+                
+                # 2. Strip Context Injection (Exploration/Radar Chat)
+                elif "CONTEXT:" in text and "User Query:" in text:
+                    import re
+                    match = re.search(r"User Query:\s*(.*)", text, re.DOTALL)
+                    if match:
+                        text = match.group(1).strip()
 
             # Skip messages with no text AND no files (common for internal tool calls that don't output text)
             if not text.strip() and not msg_files:
