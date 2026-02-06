@@ -27,7 +27,7 @@ current_user_id: ContextVar[str] = ContextVar("current_user_id", default="")
 # Context variable to hold the current radar_id for tools during sync
 current_radar_id: ContextVar[str] = ContextVar("current_radar_id", default="")
 
-async def web_search(query: str) -> str:
+def web_search(query: str) -> str:
     """
     Search Google to find information on the web.
     Use this for general knowledge, news, and current events.
@@ -50,13 +50,25 @@ async def web_search(query: str) -> str:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
         
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-            response = await client.get(url, headers=headers)
+        with httpx.Client(follow_redirects=True, timeout=15.0) as client:
+            response = client.get(url, headers=headers)
             if response.status_code == 200:
                 # Basic snippet extraction from the HTML results
-                from app.tools import scrape_website
-                # We return the top portion of the search result for the agent to parse
-                return response.text[:10000]
+                import re
+                html = response.text
+                
+                # Remove scripts and styles to save tokens
+                html = re.sub(r'<script.*?>.*?</script>', '', html, flags=re.DOTALL)
+                html = re.sub(r'<style.*?>.*?</style>', '', html, flags=re.DOTALL)
+                
+                # Remove HTML tags to get raw text
+                text = re.sub(r'<[^>]+>', ' ', html)
+                
+                # Normalize whitespace
+                text = ' '.join(text.split())
+                
+                # We return the top portion of the CLEANED text
+                return text
             else:
                 return f"Search returned status code {response.status_code}"
                 

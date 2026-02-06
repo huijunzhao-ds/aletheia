@@ -150,9 +150,14 @@ class FirestoreSessionService(BaseSessionService):
             await doc_ref.update({"state": state})
 
     async def list_sessions(self, *, user_id: str, app_name: str, radar_id: Optional[str] = None) -> List[Session]:
-        query = self.db.collection(self.collection_name).where("user_id", "==", user_id).where("app_name", "==", app_name)
+        from google.cloud.firestore import FieldFilter
+        
+        query = self.db.collection(self.collection_name)\
+            .where(filter=FieldFilter("user_id", "==", user_id))\
+            .where(filter=FieldFilter("app_name", "==", app_name))
+            
         if radar_id:
-            query = query.where("state.radar_id", "==", radar_id)
+            query = query.where(filter=FieldFilter("state.radar_id", "==", radar_id))
         
         docs = query.stream()
         results = []

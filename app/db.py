@@ -1,7 +1,7 @@
 import os
 import logging
 import datetime
-from typing import Optional, Any, Dict, List
+from typing import Any, Dict
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,6 @@ class UserDataService:
             
             key_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "gcp-sa-key.json")
             if os.path.exists(key_path):
-                self.db = firestore.AsyncClient(database=database_id, project=project_id, credentials=None) # credentials=None will check GOOGLE_APPLICATION_CREDENTIALS
-                # Actually, better to use from_service_account_json
                 self.db = firestore.AsyncClient.from_service_account_json(key_path, database=database_id)
                 logger.info(f"Initialized Firestore Client using {key_path}")
             else:

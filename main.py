@@ -1,10 +1,10 @@
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 import logging
 import uuid
 import base64
 import datetime
-from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -23,7 +23,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # ADK and Application Imports
 from google.adk.runners import Runner
-from google.genai import types, Client
+from google.genai import types
 from app.agent import app as adk_app
 from app.schemas import ResearchRequest, ResearchResponse, FileItem
 from app.auth import get_current_user
@@ -58,7 +58,6 @@ async def scheduled_radar_sync_all():
     to perform a research sync at 0:00 every day.
     """
     from app.db import user_data_service
-    import datetime
     
     logger.info("Starting global proactive radar sync...")
     user_ids = await user_data_service.get_all_users()
@@ -75,33 +74,33 @@ async def scheduled_radar_sync_all():
                 if radar.get('status') != 'active':
                     continue
                 
-            freq = radar.get('frequency', 'Daily')
-            
-            # Check last updated to prevent duplicate runs on the same day/session
-            last_updated_str = radar.get('lastUpdated', '')
-            already_run_today = False
-            try:
-                # Format is "%Y-%m-%d %H:%M" in UTC
-                if len(last_updated_str) >= 10:
-                    last_date_str = last_updated_str[:10]
-                    today_str = today.strftime("%Y-%m-%d")
-                    if last_date_str == today_str:
-                         already_run_today = True
-            except Exception:
-                pass
-
-            should_run = False
-            
-            if freq == 'Daily':
-                if not already_run_today:
-                    should_run = True
-            elif freq == 'Weekly':
-                if is_monday and not already_run_today:
-                    should_run = True
-            elif freq == 'Monthly':
-                if is_first_of_month and not already_run_today:
-                    should_run = True
+                freq = radar.get('frequency', 'Daily')
                 
+                # Check last updated to prevent duplicate runs on the same day/session
+                last_updated_str = radar.get('lastUpdated', '')
+                already_run_today = False
+                try:
+                    # Format is "%Y-%m-%d %H:%M" in UTC
+                    if len(last_updated_str) >= 10:
+                        last_date_str = last_updated_str[:10]
+                        today_str = today.strftime("%Y-%m-%d")
+                        if last_date_str == today_str:
+                                already_run_today = True
+                except Exception as e:
+                    logger.debug(f"Failed to parse lastUpdated '{last_updated_str}' for radar {radar.get('id')}: {e}")
+
+                should_run = False
+                
+                if freq == 'Daily':
+                    if not already_run_today:
+                        should_run = True
+                elif freq == 'Weekly':
+                    if is_monday and not already_run_today:
+                        should_run = True
+                elif freq == 'Monthly':
+                    if is_first_of_month and not already_run_today:
+                        should_run = True
+                    
                 if should_run:
                     logger.info(f"Proactively syncing radar {radar.get('id')} for user {uid}")
                     # We run this as a background task to not block the scheduler loop
@@ -387,16 +386,16 @@ async def init_user_data(user_id: str = Depends(get_current_user)):
         logger.error(f"Error initializing user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to initialize user data")
 
-from app.schemas import RadarCreate, RadarItemResponse
+from app.schemas import RadarCreate
 
 @app.post("/api/radars", response_model=Dict[str, str])
 async def create_radar(radar: RadarCreate, user_id: str = Depends(get_current_user)):
-    logger.info(f"Creating radar for users {user_id}: {radar.title}")
+    logger.info(f"Creating radar for user {user_id}: {radar.title}")
     from app.db import user_data_service
     try:
         # Validate frequency
-        if radar.frequency not in ["Daily", "Weekly"]:
-            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily' or 'Weekly'.")
+        if radar.frequency not in ["Daily", "Weekly", "Monthly"]:
+            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily', 'Weekly', or 'Monthly'.")
 
         data = radar.model_dump()
         data["created_at"] = datetime.datetime.now(datetime.timezone.utc)
@@ -521,7 +520,6 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         
         # 2. Get real papers from Arxiv
         from app.tools import search_arxiv
-        import datetime
         
         arxiv_config = radar_data.get('arxivConfig') or {}
         search_query = ""
@@ -549,7 +547,6 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         real_papers = search_arxiv(query=search_query, max_results=6, sort_by_date=True)
         
         if real_papers:
-            count = 0
             # We no longer store the raw papers as captured items.
             # Instead, we just pass them to the agent to generate summaries.
             logger.info(f"Found {len(real_papers)} prospective papers for radar {radar_id}")
@@ -687,7 +684,7 @@ async def save_to_exploration(item: dict, user_id: str = Depends(get_current_use
                             ext = "pdf"
                         
                         # Generate filename
-                        safe_title = "".join([c if c.isalnum() else "_" for c in item.get("title", "entitied")])[:50]
+                        safe_title = "".join([c if c.isalnum() else "_" for c in item.get("title", "untitled")])[:50]
                         filename = f"expl_{uuid.uuid4().hex[:8]}_{safe_title}.{ext}"
                         local_path = os.path.join(STATIC_DIR, "docs", filename)
                         

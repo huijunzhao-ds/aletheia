@@ -105,9 +105,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
     }, []);
 
     useEffect(() => {
-        if (radars.length >= 0) {
-            fetchBriefing();
-        }
+        fetchBriefing();
     }, [radars.length]);
 
     const fetchBriefing = async () => {

@@ -58,8 +58,6 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
         );
     }
 
-    console.log('RadarItemsList isLoading:', isLoading); // Debug log
-
     if (items.length === 0) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-950/50">
@@ -71,27 +69,15 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
                 <h3 className="text-zinc-400 font-medium mb-2">No papers found yet</h3>
                 <p className="text-zinc-600 text-sm mb-6">Run a manual sync or wait for the next scheduled update.</p>
 
-                {isLoading ? (
-                    <div className="flex flex-col items-center">
-                        <div className="px-6 py-2 bg-zinc-800 text-zinc-400 rounded-xl text-sm font-semibold flex items-center gap-2 cursor-not-allowed">
-                            <div className="w-4 h-4 border-2 border-zinc-400/30 border-t-zinc-400 rounded-full animate-spin" />
-                            Searching Sources...
-                        </div>
-                        <div className="mt-4 text-zinc-500 text-xs animate-pulse">
-                            (This might take a minute, please wait)
-                        </div>
-                    </div>
-                ) : (
-                    <button
-                        onClick={onRefresh}
-                        className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Trigger Initial Sweep
-                    </button>
-                )}
+                <button
+                    onClick={onRefresh}
+                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2 shadow-lg shadow-blue-500/20"
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Trigger Initial Sweep
+                </button>
             </div>
         );
     }
@@ -110,18 +96,17 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
     };
 
     return (
-        <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-[#0a0a0f] custom-scrollbar">
+        <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto bg-[#0a0a0f]">
             <div className="flex items-center justify-between mb-4 px-2">
                 <h3 className="text-zinc-500 text-[11px] font-bold uppercase tracking-[0.2em]">Latest Updates</h3>
                 <div className="flex items-center gap-4">
                     <span className="text-zinc-600 text-[10px] font-medium">{items.length} items found</span>
                     <button
                         onClick={onRefresh}
-                        disabled={isLoading}
-                        className={`p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded-lg transition-all"
                         title="Refresh Feed"
                     >
-                        <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                     </button>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Dashboard } from './components/Dashboard';
@@ -210,8 +210,19 @@ const App: React.FC = () => {
     setSessionDocuments([]);
     setActiveDocument(null);
 
+    const user = auth.currentUser;
+    if (!user) {
+      setMessages([{
+        id: uuidv4(),
+        role: 'assistant',
+        content: 'You must be signed in to access this radar. Please sign in and try again.',
+        timestamp: new Date()
+      }]);
+      return;
+    }
+
     try {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await user.getIdToken();
 
       // 1. Fetch briefing and determine scenario
       const briefingResponse = await fetch(`/api/radars/briefing?radar_id=${id}`, {
@@ -699,9 +710,11 @@ const App: React.FC = () => {
 
   // Filter threads based on context
   const isRadarChat = currentView === 'radar-chat';
-  const filteredThreads = isRadarChat
-    ? threads.filter(t => t.radarId === selectedRadar?.id)
-    : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
+  const filteredThreads = useMemo(() => {
+    return isRadarChat
+      ? threads.filter(t => t.radarId === selectedRadar?.id)
+      : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
+  }, [isRadarChat, currentView, threads, selectedRadar?.id]);
 
   // Dashboard View
   if (currentView === 'dashboard') {
@@ -780,7 +793,7 @@ const App: React.FC = () => {
   }
 
 
-  const radarDocuments = radarItems.map(item => {
+  const radarDocuments = useMemo(() => radarItems.map(item => {
     const isSummary = !!item.parent;
     const dateStr = item.timestamp ? item.timestamp.split('T')[0].replace(/-/g, '') : '20260201';
     const sanitizedTitle = (item.title || 'summary').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
@@ -800,8 +813,8 @@ const App: React.FC = () => {
     // we can generate a data URI from the summary text for download
     let downloadUrl = item.asset_url || item.url || '#';
     if (assetType === 'markdown' && !item.asset_url && item.summary) {
-      const blob = new Blob([`# ${item.title}\n\n${item.summary}`], { type: 'text/markdown' });
-      downloadUrl = URL.createObjectURL(blob);
+      const markdownContent = `# ${item.title}\n\n${item.summary}`;
+      downloadUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(markdownContent)}`;
     }
 
     return {
@@ -813,7 +826,7 @@ const App: React.FC = () => {
       summary: item.summary,
       title: item.title
     };
-  });
+  }), [radarItems]);
 
   const handleSelectRadarAsset = async (doc: any) => {
     let content = '';
@@ -870,7 +883,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, newMessage]);
   };
 
-  const explorationDocs = explorationItems.map(item => {
+  const explorationDocs = useMemo(() => explorationItems.map(item => {
     // Prefer downloaded local asset, fallback to original URL
     const url = item.localAssetPath || item.url || item.pdf_url || '#';
     let name = item.title || "Untitled Paper";
@@ -890,7 +903,7 @@ const App: React.FC = () => {
       summary: item.summary,
       title: item.title
     };
-  });
+  }), [explorationItems]);
 
   const handleNavigate = async (view: string) => {
     if (view === currentView) return;
