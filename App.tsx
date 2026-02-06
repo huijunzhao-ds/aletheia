@@ -140,6 +140,71 @@ const App: React.FC = () => {
     }
   }, [currentView]);
 
+  // Filter threads based on context
+  const isRadarChat = currentView === 'radar-chat';
+  const filteredThreads = useMemo(() => {
+    return isRadarChat
+      ? threads.filter(t => t.radarId === selectedRadar?.id)
+      : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
+  }, [isRadarChat, currentView, threads, selectedRadar?.id]);
+
+  const radarDocuments = useMemo(() => radarItems.map(item => {
+    const isSummary = !!item.parent;
+    const dateStr = item.timestamp ? item.timestamp.split('T')[0].replace(/-/g, '') : '20260201';
+    const sanitizedTitle = (item.title || 'summary').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
+
+    // Force .md for all text digests, even if they were legacy Arxiv PDFs
+    let extension = 'md';
+    let assetType = 'markdown';
+
+    if (item.asset_type === 'audio' || (item.asset_url && item.asset_url.endsWith('.mp3'))) {
+      extension = 'mp3';
+      assetType = 'audio';
+    }
+
+    const typeLabel = assetType === 'audio' ? 'podcast' : 'digest';
+
+    // For markdown summaries, if we don't have a real asset_url yet,
+    // we can generate a data URI from the summary text for download
+    let downloadUrl = item.asset_url || item.url || '#';
+    if (assetType === 'markdown' && !item.asset_url && item.summary) {
+      const markdownContent = `# ${item.title}\n\n${item.summary}`;
+      downloadUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(markdownContent)}`;
+    }
+
+    return {
+      id: item.id,
+      name: `${dateStr}-${sanitizedTitle}-${typeLabel}.${extension}`,
+      url: downloadUrl,
+      isRadarAsset: true,
+      assetType: assetType,
+      summary: item.summary,
+      title: item.title
+    };
+  }), [radarItems]);
+
+  const explorationDocs = useMemo(() => explorationItems.map(item => {
+    // Prefer downloaded local asset, fallback to original URL
+    const url = item.localAssetPath || item.url || item.pdf_url || '#';
+    let name = item.title || "Untitled Paper";
+    const ext = item.localAssetType || (url.endsWith('.pdf') ? 'pdf' : 'html');
+
+    // Ensure name has extension
+    if (!name.toLowerCase().endsWith(`.${ext}`)) {
+      name = `${name}.${ext}`;
+    }
+
+    return {
+      id: item.id,
+      name: name,
+      url: url,
+      isRadarAsset: false, // Treat as "To Review"
+      isArchived: item.isArchived || false,
+      summary: item.summary,
+      title: item.title
+    };
+  }), [explorationItems]);
+
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
     try {
@@ -708,13 +773,7 @@ const App: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  // Filter threads based on context
-  const isRadarChat = currentView === 'radar-chat';
-  const filteredThreads = useMemo(() => {
-    return isRadarChat
-      ? threads.filter(t => t.radarId === selectedRadar?.id)
-      : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
-  }, [isRadarChat, currentView, threads, selectedRadar?.id]);
+
 
   // Dashboard View
   if (currentView === 'dashboard') {
@@ -793,40 +852,7 @@ const App: React.FC = () => {
   }
 
 
-  const radarDocuments = useMemo(() => radarItems.map(item => {
-    const isSummary = !!item.parent;
-    const dateStr = item.timestamp ? item.timestamp.split('T')[0].replace(/-/g, '') : '20260201';
-    const sanitizedTitle = (item.title || 'summary').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
 
-    // Force .md for all text digests, even if they were legacy Arxiv PDFs
-    let extension = 'md';
-    let assetType = 'markdown';
-
-    if (item.asset_type === 'audio' || (item.asset_url && item.asset_url.endsWith('.mp3'))) {
-      extension = 'mp3';
-      assetType = 'audio';
-    }
-
-    const typeLabel = assetType === 'audio' ? 'podcast' : 'digest';
-
-    // For markdown summaries, if we don't have a real asset_url yet,
-    // we can generate a data URI from the summary text for download
-    let downloadUrl = item.asset_url || item.url || '#';
-    if (assetType === 'markdown' && !item.asset_url && item.summary) {
-      const markdownContent = `# ${item.title}\n\n${item.summary}`;
-      downloadUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(markdownContent)}`;
-    }
-
-    return {
-      id: item.id,
-      name: `${dateStr}-${sanitizedTitle}-${typeLabel}.${extension}`,
-      url: downloadUrl,
-      isRadarAsset: true,
-      assetType: assetType,
-      summary: item.summary,
-      title: item.title
-    };
-  }), [radarItems]);
 
   const handleSelectRadarAsset = async (doc: any) => {
     let content = '';
@@ -883,27 +909,7 @@ const App: React.FC = () => {
     setMessages(prev => [...prev, newMessage]);
   };
 
-  const explorationDocs = useMemo(() => explorationItems.map(item => {
-    // Prefer downloaded local asset, fallback to original URL
-    const url = item.localAssetPath || item.url || item.pdf_url || '#';
-    let name = item.title || "Untitled Paper";
-    const ext = item.localAssetType || (url.endsWith('.pdf') ? 'pdf' : 'html');
 
-    // Ensure name has extension
-    if (!name.toLowerCase().endsWith(`.${ext}`)) {
-      name = `${name}.${ext}`;
-    }
-
-    return {
-      id: item.id,
-      name: name,
-      url: url,
-      isRadarAsset: false, // Treat as "To Review"
-      isArchived: item.isArchived || false,
-      summary: item.summary,
-      title: item.title
-    };
-  }), [explorationItems]);
 
   const handleNavigate = async (view: string) => {
     if (view === currentView) return;
