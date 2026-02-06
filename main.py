@@ -4,7 +4,7 @@ import logging
 import uuid
 import base64
 import datetime
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, File, UploadFile, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -705,6 +705,46 @@ async def save_to_exploration(item: dict, user_id: str = Depends(get_current_use
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error saving to exploration: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/exploration/upload")
+async def upload_exploration_item(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user)
+):
+    from app.db import user_data_service
+    try:
+        content = await file.read()
+        
+        # Determine extension
+        filename = file.filename or "untitled"
+        ext = "pdf" if filename.lower().endswith(".pdf") else "dat"
+        # Extract meaningful name if possible
+        
+        # Generate safe filename
+        safe_title = "".join([c if c.isalnum() else "_" for c in title])[:50]
+        unique_filename = f"expl_{uuid.uuid4().hex[:8]}_{safe_title}.{ext}"
+        local_path = os.path.join(STATIC_DIR, "docs", unique_filename)
+        
+        with open(local_path, "wb") as f:
+            f.write(content)
+            
+        # Create item
+        item = {
+            "id": str(uuid.uuid4()),
+            "title": title,
+            "url": f"/static/docs/{unique_filename}",
+            "localAssetPath": f"/static/docs/{unique_filename}",
+            "localAssetType": ext,
+            "summary": "Uploaded file",
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+        
+        await user_data_service.add_exploration_item(user_id, item)
+        return {"status": "success", "item": item}
+    except Exception as e:
+        logger.error(f"Error uploading item: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/exploration")

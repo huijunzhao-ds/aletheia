@@ -18,6 +18,7 @@ export interface SidebarProps {
     onSaveToProject?: (doc: any) => void;
     onDeleteThread?: (id: string) => void;
     activeDocumentUrl?: string;
+    onAddDocument?: () => void;
 }
 
 type SectionKey = 'toReview' | 'outputs' | 'reviewed' | 'myChats';
@@ -38,7 +39,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onArchiveDocument,
     onSaveToProject,
     onDeleteThread,
-    activeDocumentUrl
+    activeDocumentUrl,
+    onAddDocument
 }) => {
     const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
@@ -110,25 +112,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <div className="flex-1 overflow-y-auto p-2 space-y-1">
 
+
+
                 {/* To Review Section */}
-                <div className="border-b border-zinc-800/50 pb-1">
-                    <button
-                        onClick={() => toggleSection('toReview')}
-                        className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
-                    >
-                        <div className="flex items-center gap-2">
+                <div className="pb-1 mt-2">
+                    <div className="flex items-center justify-between pr-2 group/header">
+                        <button
+                            onClick={() => toggleSection('toReview')}
+                            className="flex-1 flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors text-left"
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className={`w-3 h-3 transition-transform ${expandedSections.toReview ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                                </svg>
+                                <span>To Review</span>
+                            </div>
+                        </button>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onAddDocument?.();
+                            }}
+                            className="p-1 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded opacity-100 transition-all"
+                            title="Add Article"
+                        >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                             </svg>
-                            <span>To Review</span>
-                        </div>
-                        <svg className={`w-3 h-3 transition-transform ${expandedSections.toReview ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                    </button>
+                        </button>
+                    </div>
 
                     {expandedSections.toReview && (
-                        <div className="pl-4 pr-2 space-y-0.5 mt-1">
+                        <div className="pl-6 pr-2 space-y-0.5 mt-1">
                             {articleDocs.map((doc, idx) => (
                                 <div
                                     key={idx}
@@ -217,25 +235,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 {/* Outputs Section */}
-                <div className="border-b border-zinc-800/50 pb-1">
+                <div className="pb-1 mt-2">
                     <button
                         onClick={() => toggleSection('outputs')}
-                        className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
+                        className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors text-left"
                     >
                         <div className="flex items-center gap-2">
+                            <svg className={`w-3 h-3 transition-transform ${expandedSections.outputs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                             <span>Outputs</span>
                         </div>
-                        <svg className={`w-3 h-3 transition-transform ${expandedSections.outputs ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
                     </button>
 
                     {expandedSections.outputs && (
-                        <div className="pl-4 pr-2 space-y-0.5 mt-1">
+                        <div className="pl-6 pr-2 space-y-0.5 mt-1">
                             {mediaDocs.map((doc, idx) => (
                                 <div
                                     key={idx}
@@ -258,7 +276,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         )}
                                         <span className="truncate">{doc.name}</span>
                                     </div>
-
                                     <div className="relative">
                                         <button
                                             onClick={(e) => {
@@ -305,97 +322,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 {/* Reviewed Section */}
-                <div className="border-b border-zinc-800/50 pb-1">
+                <div className="pb-1 mt-2">
                     <button
                         onClick={() => toggleSection('reviewed')}
-                        className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors"
+                        className="w-full flex items-center justify-between p-2 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors text-left"
                     >
                         <div className="flex items-center gap-2">
+                            <svg className={`w-3 h-3 transition-transform ${expandedSections.reviewed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" />
                             </svg>
                             <span>Reviewed</span>
                         </div>
-                        <svg className={`w-3 h-3 transition-transform ${expandedSections.reviewed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
                     </button>
 
                     {expandedSections.reviewed && (
-                        <div className="pl-4 pr-2 space-y-0.5 mt-1">
+                        <div className="pl-6 pr-2 space-y-0.5 mt-1">
                             {archivedDocs.map((doc, idx) => (
                                 <div
                                     key={idx}
-                                    onClick={() => onSelectDocument?.(doc)}
-                                    className={`px-3 py-2 text-sm rounded cursor-pointer flex items-center justify-between group transition-colors opacity-75 hover:opacity-100 ${activeDocumentUrl === doc.url
-                                        ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
-                                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent'
-                                        }`}
-                                    title={doc.name}
+                                    className="px-3 py-2 text-sm text-zinc-500 flex items-center justify-between group"
                                 >
-                                    <span className="truncate flex-1 italic">{doc.name}</span>
-
-                                    <div className="relative">
+                                    <span className="truncate line-through">{doc.name}</span>
+                                    {onArchiveDocument && (
                                         <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setActiveMenuId(activeMenuId === `arch-${idx}` ? null : `arch-${idx}`);
-                                            }}
-                                            className="p-1 hover:bg-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                                            onClick={() => onArchiveDocument(doc, false)}
+                                            className="text-xs text-blue-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                         >
-                                            <svg className="w-3.5 h-3.5 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
-                                                <path d="M12 8a2 2 0 100-4 2 2 0 000 4zM12 14a2 2 0 100-4 2 2 0 000 4zM12 20a2 2 0 100-4 2 2 0 000 4z" />
-                                            </svg>
+                                            Restore
                                         </button>
-
-                                        {activeMenuId === `arch-${idx}` && (
-                                            <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
-                                                    className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
-                                                >
-                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                                    </svg>
-                                                    Download
-                                                </button>
-
-                                                {onSaveToProject && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onSaveToProject(doc); setActiveMenuId(null); }}
-                                                        className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
-                                                    >
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                                                        </svg>
-                                                        Save to Project
-                                                    </button>
-                                                )}
-
-                                                {onArchiveDocument && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onArchiveDocument(doc, false); setActiveMenuId(null); }}
-                                                        className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
-                                                    >
-                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                                        </svg>
-                                                        Restore to Active
-                                                    </button>
-                                                )}
-
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
-                                                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2 border-t border-zinc-700 mt-1 pt-1"
-                                                >
-                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                    </svg>
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
                             ))}
                             {archivedDocs.length === 0 && (
@@ -405,26 +363,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                 </div>
 
+
+
+
                 {/* My Chats Section */}
-                <div className="pb-1">
-                    <div className="flex items-center justify-between pr-2">
+                <div className="pb-1 mt-2">
+                    <div className="flex items-center justify-between pr-2 group/header">
                         <button
                             onClick={() => toggleSection('myChats')}
                             className="flex items-center justify-between p-2 flex-1 text-xs font-semibold text-blue-400 uppercase tracking-wider hover:text-blue-300 transition-colors text-left"
                         >
                             <div className="flex items-center gap-2">
+                                <svg className={`w-3 h-3 transition-transform ${expandedSections.myChats ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                                 </svg>
                                 <span>My Chats</span>
-                                <svg className={`w-3 h-3 transition-transform ${expandedSections.myChats ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
                             </div>
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onNewConversation?.(); }}
-                            className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-blue-400 transition-all"
+                            className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-blue-400 transition-all opacity-100"
                             title="New Research"
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -435,7 +396,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
 
                     {expandedSections.myChats && (
-                        <div className="pl-4 pr-2 space-y-0.5 mt-1">
+                        <div className="pl-6 pr-2 space-y-0.5 mt-1">
                             {threads.map((thread) => (
                                 <div
                                     key={thread.id}
@@ -443,9 +404,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                     className="px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded cursor-pointer flex items-center justify-between group"
                                 >
                                     <div className="flex items-center gap-2 truncate">
-                                        <svg className="w-3.5 h-3.5 flex-shrink-0 text-zinc-600 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                        </svg>
                                         <span className="truncate">{thread.title}</span>
                                     </div>
 
