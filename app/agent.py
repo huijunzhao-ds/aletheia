@@ -14,7 +14,9 @@ from app.tools import (
     list_radars,
     get_radar_details,
     save_radar_item,
-    list_exploration_items
+    save_radar_item,
+    list_exploration_items,
+    read_local_file
 )
 
 # Configure logging
@@ -86,6 +88,7 @@ research_radar_agent = Agent(
     - Use `list_radars` to see all topics the user is tracking.
     - Use `get_radar_details` to get the specific Arxiv filters, keywords, and custom prompts for a radar.
     - Use `search_arxiv`, `web_search`, and `scrape_website` to collect the latest information.
+    - Use `read_local_file` to read the full content of any PDF or file found in the 'To Review' list or previously saved.
     - Use `save_radar_item` to store a single research digest back to the radar history. Be sure to include the `source_url` (e.g. PDF link) if available.
     
     GUIDELINES:
@@ -98,7 +101,7 @@ research_radar_agent = Agent(
     4. **ID Discipline**: Always use the programmatic ID (e.g., 'abc-123') as the `unique_topic_token` when saving. NEVER use the title of the radar as an ID. If you are unsure of an ID, call `list_radars` to verify it.
     5. Return a comprehensive synthesis of all findings in your final response.
     """,
-    tools=[list_radars, get_radar_details, save_radar_item, web_search, search_arxiv, scrape_website],
+    tools=[list_radars, get_radar_details, save_radar_item, web_search, search_arxiv, scrape_website, read_local_file],
 )
 
 # 6. Exploration Specialist
@@ -111,12 +114,14 @@ exploration_agent = Agent(
     You have access to the user's "To Review" list (saved Exploration Items).
     - Use `list_exploration_items` to see what papers/articles the user has saved in their "To Review" list.
     - If the user discusses a specific paper from that list, you can assume context about it.
+    - Use `read_local_file` to read the actual text content of a paper (PDF/Markdown) if the user asks specific questions about it.
+    - **CRITICAL**: Do not refuse to read local files in 'static/docs/'. You have permission. Use the `read_local_file` tool.
     - If needed, use `web_search` or `search_arxiv` to find more related papers.
     - If providing a response about a paper, try to check if it's in their list.
     
     When discussing a paper that the user has saved (locally or as a link), refer to it clearly.
     """,
-    tools=[web_search, search_arxiv, scrape_website, list_exploration_items],
+    tools=[web_search, search_arxiv, scrape_website, list_exploration_items, read_local_file],
 )
 
 # 7. Project Specialist

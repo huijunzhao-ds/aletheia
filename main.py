@@ -24,7 +24,14 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # ADK and Application Imports
 from google.adk.runners import Runner
 from google.genai import types
-from app.agent import app as adk_app, root_agent
+from app.agent import (
+    app as adk_app, 
+    root_agent,
+    research_radar_agent,
+    exploration_agent,
+    project_agent,
+    search_agent
+)
 from google.adk.apps.app import App
 from app.schemas import ResearchRequest, ResearchResponse, FileItem
 from app.auth import get_current_user
@@ -144,16 +151,25 @@ app.add_middleware(
 @app.post("/api/research", response_model=ResearchResponse)
 async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get_current_user)):
     # Determine app_name based on agent_type
-    target_app_name = f"aletheia-{request.agent_type}" if request.agent_type else adk_app.name
+    target_app_name = f"aletheia_{request.agent_type}" if request.agent_type else adk_app.name
 
     # Set context for tools
     current_user_id.set(user_id)
     
     logger.info(f"Received research request from {user_id} for {target_app_name}: {request.query}")
     try:
+        # Select the appropriate root agent based on context (Direct Routing)
+        # This bypasses the generic router for specific contexts to ensure correct tool availability
+        target_agent = root_agent
+        if request.agent_type == 'radar':
+            target_agent = research_radar_agent
+        elif request.agent_type == 'exploration':
+            target_agent = exploration_agent
+        elif request.agent_type == 'projects':
+            target_agent = project_agent
+        
         # Create a scoped app instance for this request to match the target_app_name
-        # use the same root agent logic, but under the specific app name context
-        scoped_app = App(root_agent=root_agent, name=target_app_name)
+        scoped_app = App(root_agent=target_agent, name=target_app_name)
         runner = Runner(app=scoped_app, session_service=session_service)
         session_id = request.sessionId or str(uuid.uuid4())
         
@@ -230,6 +246,8 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             if "static/docs/" in request.activeDocumentUrl:
                 filename = request.activeDocumentUrl.split('/')[-1]
                 context_note += f"\nThis is a locally saved file named '{filename}'."
+                context_note += f"\nIMPORTANT: You have full permission to read this file. Use the `read_local_file` tool with the path '{request.activeDocumentUrl}' to access its content if the user asks about it."
+                context_note += f"\nDO NOT REFUSE to read this file. It is safe and part of the user's research."
             
             query_text += context_note
             logger.info(f"Injected active document context: {request.activeDocumentUrl}")
@@ -344,7 +362,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
 
 @app.delete("/api/threads/{session_id}")
 async def delete_thread(session_id: str, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
-    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
+    target_app_name = f"aletheia_{agent_type}" if agent_type else adk_app.name
     try:
         await session_service.delete_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
         return {"status": "success", "message": f"Thread {session_id} deleted"}
@@ -359,7 +377,7 @@ async def delete_thread(session_id: str, agent_type: Optional[str] = 'exploratio
 
 @app.get("/api/threads")
 async def get_user_threads(radar_id: Optional[str] = None, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
-    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
+    target_app_name = f"aletheia_{agent_type}" if agent_type else adk_app.name
     try:
         threads = []
         session_list_fn = getattr(session_service, "list_sessions_for_user", None)
@@ -403,6 +421,14 @@ async def get_user_threads(radar_id: Optional[str] = None, agent_type: Optional[
                     title = (raw_state.get("title") if isinstance(raw_state, dict) else None) or getattr(s, "title", None) or "Untitled Research"
 
                 if session_id:
+                    # Filter out internal/system sessions
+                    # 1. Check ID pattern (sync_*)
+                    if str(session_id).startswith("sync_"):
+                        continue
+                    # 2. Check Title pattern (System sweeping/thinking)
+                    if str(title).startswith("System sweeping") or str(title).startswith("System thinking"):
+                        continue
+
                     threads.append({
                         "id": session_id, 
                         "title": title,
@@ -617,8 +643,21 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
         # For background sync, we also need to use the correct app name if we want consistency, 
         # but 'sync' is typically internal. However, consistently using 'aletheia-radar' is better.
-        target_sync_app_name = "aletheia-radar"
-        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=target_sync_app_name, state={"radar_id": radar_id})
+        target_sync_app_name = "aletheia_radar"
+        
+        # Add descriptive title for data auditing
+        sync_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        sync_title = f"System sweeping for {sync_date}"
+        
+        await session_service.create_session(
+            user_id=user_id, 
+            session_id=job_session_id, 
+            app_name=target_sync_app_name, 
+            state={
+                "radar_id": radar_id,
+                "title": sync_title 
+            }
+        )
         
         scoped_sync_app = App(root_agent=root_agent, name=target_sync_app_name)
         runner = Runner(app=scoped_sync_app, session_service=session_service)
@@ -840,7 +879,7 @@ async def save_to_project(item: dict, user_id: str = Depends(get_current_user)):
 
 @app.get("/api/session/{session_id}")
 async def get_session_history(session_id: str, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
-    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
+    target_app_name = f"aletheia_{agent_type}" if agent_type else adk_app.name
     try:
         session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
         
@@ -921,10 +960,35 @@ async def get_session_history(session_id: str, agent_type: Optional[str] = 'expl
                 event_type = str(getattr(event, "type", "") or getattr(event, "event_type", "")).lower()
                 if any(k in event_type for k in ("user", "input", "request")):
                     role = "user"
-                elif "thought" in text.lower() or "thinking" in event_type:
-                    role = "system"
+                elif "thought" in text.lower() or "thinking" in event_type or "tool" in event_type:
+                    # Check if this is a user-facing tool output that should be shown
+                    # We look for specific function names in the event or tool usage metadata
+                    # Note: ADK events might store tool name in 'function_name' or similar
+                    is_user_facing = False
+                    tool_name = getattr(event, "tool_name", "") or getattr(event, "function_name", "") or ""
+                    
+                    # If not direct attribute, try to find it in tool_calls of previous event? 
+                    # Simpler approach: Check if text looks like a file path output from our known tools
+                    # or if the tool_name was captured.
+                    if any(t in tool_name for t in ["generate_audio_summary", "generate_presentation_file", "generate_video_lecture_file"]):
+                         is_user_facing = True
+                    
+                    # Also content heuristics for tool outputs that are just file paths
+                    if text.strip().endswith(".mp3") or text.strip().endswith(".pptx") or text.strip().endswith(".mp4"):
+                        if "/static/" in text or "http" in text:
+                            is_user_facing = True
+
+                    if is_user_facing:
+                        role = "assistant" # Show as assistant message
+                    else:
+                        role = "tool"  # Treat as internal tool/system log
                 else:
-                    role = "assistant"
+                    # If we really can't tell, don't show it. Better to miss a weird message than show garbage.
+                    role = "unknown"
+
+            # 5. STRICT FILTER: Only show User and Assistant messages in UI
+            if role not in ("user", "assistant"):
+                continue
             
             # Extract files if any
             files = []

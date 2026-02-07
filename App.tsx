@@ -351,18 +351,10 @@ const App: React.FC = () => {
       });
 
       if (briefingData.scenario === 'resuming' && radarThreads.length > 0) {
-        // Scenario 2.1: Pickup existing work - Load the latest thread
+        // Scenario 2.1: Pickup existing work - Load the latest thread exactly as it was
         const latestThread = radarThreads[0]; // Assuming backend returns sorted by date
         // Explicitly pass 'radar' context to avoid race condition with setCurrentView
         await handleSelectThread(latestThread.id, 'radar');
-
-        // Prepend the briefing/welcome back message to the existing history
-        setMessages(prev => [{
-          id: uuidv4(),
-          role: 'assistant',
-          content: briefingData.summary,
-          timestamp: new Date()
-        }, ...prev]);
       } else {
         // Scenarios 2.2 and 2.3: New parse or new radar
         setMessages([{
@@ -1023,15 +1015,12 @@ const App: React.FC = () => {
 
     // If leaving radar context to exploration, reset session to ensure independence
     if (view === 'exploration' && (currentView === 'radar-chat' || selectedRadar)) {
-      // Option: Try to resume the last "exploration" (non-radar) thread
-      const lastExplorationThread = threads.find(t => !t.radarId);
-      if (lastExplorationThread) {
-        await handleSelectThread(lastExplorationThread.id);
-      } else {
-        resetSession();
-      }
+      // Don't try to find a thread from the current 'threads' list as it contains Radar threads.
+      // Just reset to a fresh session state. The useEffect will load the correct exploration threads.
+      resetSession();
       setSelectedRadar(null);
     }
+
     // If entering specific other views, just switch
     setCurrentView(view as ViewState);
   };

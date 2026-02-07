@@ -17,3 +17,4 @@ google-cloud-firestore
 httpx
 pyjwt[crypto]
 apscheduler
+pypdf
