@@ -101,7 +101,8 @@ const App: React.FC = () => {
       try {
         const token = await user.getIdToken();
         // Fetch threads
-        const threadsRes = await fetch('/api/threads', {
+        // Fetch threads based on initial view (likely dashboard -> exploration)
+        const threadsRes = await fetch('/api/threads?agent_type=exploration', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const threadsData = await threadsRes.json();
@@ -144,7 +145,31 @@ const App: React.FC = () => {
     } else {
       setIsSidebarOpen(true);
     }
-  }, [currentView]);
+
+    // Refresh threads when switching major contexts
+    const refreshThreads = async () => {
+      if (!user) return;
+      const token = await user.getIdToken();
+
+      let agentType = 'exploration';
+      if (currentView === 'projects') agentType = 'projects';
+      if (currentView === 'radar-chat') agentType = 'radar';
+
+      // If entering radar-chat, we usually handle thread fetching in handleSelectRadar
+      if (currentView !== 'radar-chat') {
+        try {
+          const res = await fetch(`/api/threads?agent_type=${agentType}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.threads) setThreads(data.threads);
+        } catch (e) {
+          console.error("Error refreshing threads", e);
+        }
+      }
+    };
+    refreshThreads();
+  }, [currentView, user]);
 
   // Filter threads based on context
   const isRadarChat = currentView === 'radar-chat';
@@ -224,12 +249,18 @@ const App: React.FC = () => {
 
   const handleSignOut = () => signOut(auth);
 
-  const handleSelectThread = async (id: string) => {
+  const handleSelectThread = async (id: string, overrideAgentType?: string) => {
     setIsProcessing(true);
     setCurrentStatus('Loading research thread...');
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`/api/session/${id}`, {
+      let agentType = overrideAgentType || 'exploration';
+      if (!overrideAgentType) {
+        if (currentView === 'projects') agentType = 'projects';
+        if (currentView === 'radar-chat') agentType = 'radar';
+      }
+
+      const response = await fetch(`/api/session/${id}?agent_type=${agentType}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -306,7 +337,7 @@ const App: React.FC = () => {
       }
 
       // 2. Fetch threads for this radar specifically to decide if we resume
-      const threadsRes = await fetch(`/api/threads?radar_id=${id}`, {
+      const threadsRes = await fetch(`/api/threads?radar_id=${id}&agent_type=radar`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const threadsData = await threadsRes.json();
@@ -322,7 +353,8 @@ const App: React.FC = () => {
       if (briefingData.scenario === 'resuming' && radarThreads.length > 0) {
         // Scenario 2.1: Pickup existing work - Load the latest thread
         const latestThread = radarThreads[0]; // Assuming backend returns sorted by date
-        await handleSelectThread(latestThread.id);
+        // Explicitly pass 'radar' context to avoid race condition with setCurrentView
+        await handleSelectThread(latestThread.id, 'radar');
 
         // Prepend the briefing/welcome back message to the existing history
         setMessages(prev => [{
@@ -467,7 +499,11 @@ const App: React.FC = () => {
     if (!user) return;
     try {
       const token = await user.getIdToken();
-      const response = await fetch(`/api/threads/${threadId}`, {
+      let agentType = 'exploration';
+      if (currentView === 'projects') agentType = 'projects';
+      if (currentView === 'radar-chat') agentType = 'radar';
+
+      const response = await fetch(`/api/threads/${threadId}?agent_type=${agentType}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -524,7 +560,7 @@ const App: React.FC = () => {
         setMessages(prev => [...prev, {
           id: uuidv4(),
           role: 'assistant',
-          content: `**Download completed.** \n\nPlease check "Material Articles" in the Exploration view.`,
+          content: `**Download completed.** \n\nPlease check "To Review" in the Exploration view.`,
           timestamp: new Date()
         }]);
 
@@ -753,7 +789,8 @@ const App: React.FC = () => {
           sessionId: sessionId,
           files: uploadedFiles,
           radarId: currentView === 'radar-chat' ? selectedRadar?.id : null,
-          activeDocumentUrl: (!isRadarChat && activeDocument) ? activeDocument.url : null
+          activeDocumentUrl: (!isRadarChat && activeDocument) ? activeDocument.url : null,
+          agent_type: currentView === 'radar-chat' ? 'radar' : (currentView === 'projects' ? 'projects' : 'exploration')
         }),
       });
 

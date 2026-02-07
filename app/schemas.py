@@ -29,6 +29,7 @@ class ResearchRequest(BaseModel):
     sessionId: Optional[str] = None
     radarId: Optional[str] = None
     activeDocumentUrl: Optional[str] = None
+    agent_type: Optional[str] = 'exploration'
 
 class ResearchResponse(BaseModel):
     content: str

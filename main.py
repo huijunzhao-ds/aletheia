@@ -24,7 +24,8 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 # ADK and Application Imports
 from google.adk.runners import Runner
 from google.genai import types
-from app.agent import app as adk_app
+from app.agent import app as adk_app, root_agent
+from google.adk.apps.app import App
 from app.schemas import ResearchRequest, ResearchResponse, FileItem
 from app.auth import get_current_user
 from app.sessions import get_session_service
@@ -142,18 +143,24 @@ app.add_middleware(
 
 @app.post("/api/research", response_model=ResearchResponse)
 async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get_current_user)):
+    # Determine app_name based on agent_type
+    target_app_name = f"aletheia-{request.agent_type}" if request.agent_type else adk_app.name
+
     # Set context for tools
     current_user_id.set(user_id)
     
-    logger.info(f"Received research request from {user_id}: {request.query}")
+    logger.info(f"Received research request from {user_id} for {target_app_name}: {request.query}")
     try:
-        runner = Runner(app=adk_app, session_service=session_service)
+        # Create a scoped app instance for this request to match the target_app_name
+        # use the same root agent logic, but under the specific app name context
+        scoped_app = App(root_agent=root_agent, name=target_app_name)
+        runner = Runner(app=scoped_app, session_service=session_service)
         session_id = request.sessionId or str(uuid.uuid4())
         
         # Check if session exists, if not create it
         session_exists = False
         try:
-            existing_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            existing_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
             if existing_session:
                 session_exists = True
                 logger.info(f"Reusing existing session: {session_id}")
@@ -166,17 +173,17 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                 state = {}
                 if request.radarId:
                     state["radar_id"] = request.radarId
-                await session_service.create_session(user_id=user_id, session_id=session_id, app_name=adk_app.name, state=state)
+                await session_service.create_session(user_id=user_id, session_id=session_id, app_name=target_app_name, state=state)
             except Exception:
                 logger.exception(f"Error initializing session: {session_id}")
                 raise
         elif request.radarId:
             # Tag existing session if radarId is provided
-            await session_service.update_session(user_id=user_id, session_id=session_id, app_name=adk_app.name, state_update={"radar_id": request.radarId})
+            await session_service.update_session(user_id=user_id, session_id=session_id, app_name=target_app_name, state_update={"radar_id": request.radarId})
         
         # Save the query as the title if this is a fresh session
         try:
-            curr = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            curr = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
             if not curr.state or "title" not in curr.state:
                 # Generate a smart title
                 session_title = await generate_smart_title(request.query)
@@ -184,7 +191,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                 await session_service.update_session(
                     user_id=user_id, 
                     session_id=session_id, 
-                    app_name=adk_app.name,
+                    app_name=target_app_name,
                     state_update={
                         "title": session_title
                     }
@@ -262,7 +269,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         # Update session state with persisted file metadata
         if uploaded_doc_metadata:
             try:
-                curr_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+                curr_session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
                 existing_uploaded = curr_session.state.get("uploaded_files", [])
                 # Deduplicate by path
                 existing_paths = {uf.get("path") for uf in existing_uploaded if isinstance(uf, dict)}
@@ -273,7 +280,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
                 await session_service.update_session(
                     user_id=user_id,
                     session_id=session_id,
-                    app_name=adk_app.name,
+                    app_name=target_app_name,
                     state_update={"uploaded_files": existing_uploaded}
                 )
             except Exception as e:
@@ -290,7 +297,7 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
             pass # We just consume the events to let the agent complete
 
         # Retrieve the updated session to get the final response
-        session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
         
         response_text = ""
         generated_files = []
@@ -336,21 +343,55 @@ async def research_endpoint(request: ResearchRequest, user_id: str = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/threads/{session_id}")
-async def delete_thread(session_id: str, user_id: str = Depends(get_current_user)):
+async def delete_thread(session_id: str, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
+    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
     try:
-        await session_service.delete_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        await session_service.delete_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
         return {"status": "success", "message": f"Thread {session_id} deleted"}
     except Exception as e:
         logger.error(f"Error deleting thread {session_id}: {e}")
+        # Try finding in default app just in case
+        try:
+            await session_service.delete_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        except:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/threads")
-async def get_user_threads(radar_id: Optional[str] = None, user_id: str = Depends(get_current_user)):
+async def get_user_threads(radar_id: Optional[str] = None, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
+    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
     try:
         threads = []
         session_list_fn = getattr(session_service, "list_sessions_for_user", None)
+
         if callable(session_list_fn):
-            sessions = await session_list_fn(user_id=user_id, app_name=adk_app.name, radar_id=radar_id)
+            sessions = await session_list_fn(user_id=user_id, app_name=target_app_name, radar_id=radar_id)
+            
+            # Merge legacy sessions (from default 'Aletheia' app scope) to prevent history loss
+            if target_app_name != adk_app.name:
+                try:
+                    legacy_sessions = await session_list_fn(user_id=user_id, app_name=adk_app.name, radar_id=radar_id)
+                    # Deduplicate based on session ID
+                    if sessions is None:
+                        sessions = []
+                    existing_ids = set()
+                    for s in sessions:
+                        sid = getattr(s, "session_id", None) or getattr(s, "id", None)
+                        if isinstance(s, dict):
+                            sid = s.get("session_id") or s.get("id")
+                        if sid:
+                            existing_ids.add(sid)
+                            
+                    for ls in legacy_sessions or []:
+                        ls_id = getattr(ls, "session_id", None) or getattr(ls, "id", None)
+                        if isinstance(ls, dict):
+                            ls_id = ls.get("session_id") or ls.get("id")
+                        
+                        if ls_id and ls_id not in existing_ids:
+                            sessions.append(ls)
+                except Exception as ex:
+                    logger.warning(f"Failed to fetch legacy threads: {ex}")
+
             for s in sessions or []:
                 if isinstance(s, dict):
                     raw_state = s.get("state") or {}
@@ -574,9 +615,13 @@ async def execute_radar_sync(user_id: str, radar_id: str):
             query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates and synthesize a report."
             
         job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
-        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name, state={"radar_id": radar_id})
+        # For background sync, we also need to use the correct app name if we want consistency, 
+        # but 'sync' is typically internal. However, consistently using 'aletheia-radar' is better.
+        target_sync_app_name = "aletheia-radar"
+        await session_service.create_session(user_id=user_id, session_id=job_session_id, app_name=target_sync_app_name, state={"radar_id": radar_id})
         
-        runner = Runner(app=adk_app, session_service=session_service)
+        scoped_sync_app = App(root_agent=root_agent, name=target_sync_app_name)
+        runner = Runner(app=scoped_sync_app, session_service=session_service)
         content = types.Content(parts=[types.Part(text=query)])
         
         response_text = ""
@@ -584,7 +629,7 @@ async def execute_radar_sync(user_id: str, radar_id: str):
             pass
 
         # 4. Fetch the final session to get the full assistant response and update summary
-        final_session = await session_service.get_session(user_id=user_id, session_id=job_session_id, app_name=adk_app.name)
+        final_session = await session_service.get_session(user_id=user_id, session_id=job_session_id, app_name=target_sync_app_name)
         if final_session and final_session.events:
             for event in reversed(final_session.events):
                 if getattr(event, "role", None) == "assistant":
@@ -794,9 +839,18 @@ async def save_to_project(item: dict, user_id: str = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/session/{session_id}")
-async def get_session_history(session_id: str, user_id: str = Depends(get_current_user)):
+async def get_session_history(session_id: str, agent_type: Optional[str] = 'exploration', user_id: str = Depends(get_current_user)):
+    target_app_name = f"aletheia-{agent_type}" if agent_type else adk_app.name
     try:
-        session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+        session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=target_app_name)
+        
+        # If not found, try fallback to default app (for legacy sessions created before separation)
+        if not session:
+            try:
+                session = await session_service.get_session(user_id=user_id, session_id=session_id, app_name=adk_app.name)
+            except:
+                pass
+        
         if not session:
             return {"messages": []}
         
