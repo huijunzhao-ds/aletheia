@@ -899,8 +899,8 @@ const App: React.FC = () => {
   if (currentView === 'projects') {
     return (
       <ComingSoon
-        title='Project Management'
-        description="Project Management will enable you to organize your research threads, save artifacts, and collaborate with teams. This feature is in active development."
+        title='Research Projects'
+        description="Aletheia can assist you working on research projects, from preparing for a presentation to writing a paper draft. The feature will come soon. Stay tuned."
         onNavigate={(view: string) => setCurrentView(view as ViewState)}
         userPhoto={user?.photoURL}
         userName={user?.displayName}

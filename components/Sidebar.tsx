@@ -207,9 +207,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                         className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
                                                     >
                                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                                         </svg>
-                                                        Archive
+                                                        Move to Reviewed
                                                     </button>
                                                 )}
 
@@ -343,17 +343,77 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             {archivedDocs.map((doc, idx) => (
                                 <div
                                     key={idx}
-                                    className="px-3 py-2 text-sm text-zinc-500 flex items-center justify-between group"
+                                    className={`px-3 py-2 text-sm rounded cursor-pointer flex items-center justify-between group transition-colors ${activeDocumentUrl === doc.url
+                                        ? 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+                                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 border border-transparent'
+                                        }`}
+                                    title={doc.name}
                                 >
-                                    <span className="truncate line-through">{doc.name}</span>
-                                    {onArchiveDocument && (
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span className="truncate">{doc.name}</span>
+                                    </div>
+
+                                    <div className="relative flex-shrink-0">
                                         <button
-                                            onClick={() => onArchiveDocument(doc, false)}
-                                            className="text-xs text-blue-500 hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setActiveMenuId(activeMenuId === `arch-${idx}` ? null : `arch-${idx}`);
+                                            }}
+                                            className="p-1 hover:bg-zinc-700 rounded transition-colors opacity-0 group-hover:opacity-100"
                                         >
-                                            Restore
+                                            <svg className="w-3.5 h-3.5 text-zinc-500" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M12 8a2 2 0 100-4 2 2 0 000 4zM12 14a2 2 0 100-4 2 2 0 000 4zM12 20a2 2 0 100-4 2 2 0 000 4z" />
+                                            </svg>
                                         </button>
-                                    )}
+
+                                        {activeMenuId === `arch-${idx}` && (
+                                            <div className="absolute right-0 bottom-full mb-1 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onDownloadDocument?.(doc); setActiveMenuId(null); }}
+                                                    className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                                    </svg>
+                                                    Download
+                                                </button>
+
+                                                {onSaveToProject && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onSaveToProject(doc); setActiveMenuId(null); }}
+                                                        className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                                                        </svg>
+                                                        Save to Project
+                                                    </button>
+                                                )}
+
+                                                {onArchiveDocument && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onArchiveDocument(doc, false); setActiveMenuId(null); }}
+                                                        className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                                                    >
+                                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                        </svg>
+                                                        Move to To Review
+                                                    </button>
+                                                )}
+
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); doc.id && onDeleteDocument?.(doc.id); setActiveMenuId(null); }}
+                                                    className="w-full text-left px-3 py-1.5 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2 border-t border-zinc-700 mt-1 pt-1"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                             {archivedDocs.length === 0 && (
