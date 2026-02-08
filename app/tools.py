@@ -91,31 +91,68 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
     Returns:
         A list of dictionaries containing paper details (title, summary, authors, pdf_url).
     """
-    client = arxiv.Client()
+    # If published_after is set, we want ALL papers in that window, so we uncap max_results
+    # The loop will terminate based on the date check or server-side filter.
+    search_max_results = float('inf') if published_after else max_results
+
+    # Configure client with retries and optimized page size
+    # If max_results is distinct, scale page size. If infinite/all, use 100.
+    if search_max_results and search_max_results != float('inf'):
+         page_size = min(search_max_results * 4, 100) if search_max_results > 0 else 100
+    else:
+         page_size = 100
+
+    client = arxiv.Client(
+        page_size=page_size,
+        delay_seconds=3.0,
+        num_retries=3
+    )
     
-    # If we are filtering by a specific time window, we likely want to see ALL matching papers in that window,
-    # not just the top 5 (which might be old if we use Relevance).
-    # However, max_results still caps the fetch to be safe.
+    # Construct the final query with server-side date filtering if applicable
+    final_query = query.strip() if query else ""
+    
+    if published_after:
+        # ArXiv API format: YYYYMMDDHHMM
+        # We construct a range from published_after to a far future date
+        start_date = published_after.strftime("%Y%m%d%H%M")
+        # Use a reasonable future year to cover "now"
+        end_date = (datetime.datetime.now() + datetime.timedelta(days=365)).strftime("%Y%m%d%H%M")
+        
+        date_filter = f"submittedDate:[{start_date} TO {end_date}]"
+        
+        if final_query:
+            # Group original query to ensure boolean logic works as expected (Query AND Date)
+            final_query = f"({final_query}) AND {date_filter}"
+        else:
+            final_query = date_filter
+
+    if not final_query:
+        logger.warning("Arxiv search called with empty query and no date filter.")
+        return []
+
     sort_criterion = arxiv.SortCriterion.SubmittedDate if sort_by_date else arxiv.SortCriterion.Relevance
     
+    # arxiv library documentation says: max_results (int): ... default is 10.
+    # Current implementation of python-arxiv (v2.x) uses a generator. 
+    # Passing float('inf') might crash it if it expects int. 
+    # Let's use a standard explicit check.
+    _limit = search_max_results if (search_max_results and search_max_results != float('inf')) else None
+
     search = arxiv.Search(
-        query=query,
-        max_results=max_results,
+        query=final_query,
+        max_results=_limit,
         sort_by=sort_criterion
     )
     
     results = []
     try:
-        # TEMP DEBUG LOGGING - REMOVE LATER
-        logger.info(f"[DEBUG] Starting arxiv search. Query: {query}, Max: {max_results}, SortByDate: {sort_by_date}, Cutoff: {published_after}")
-        
-        count_examined = 0
+        # Execute search
+        # Note: We trust the server-side date filter, but we also double-check 
+        # because the API can sometimes be fuzzy or return 'updated' dates that differ.
         for result in client.results(search):
-            count_examined += 1
             
-            # Time filter check
+            # Additional client-side safety check for date
             if published_after:
-                # Ensure timezone awareness consistency (arxiv results are usually UTC)
                 res_date = result.published
                 if not res_date.tzinfo:
                     res_date = res_date.replace(tzinfo=datetime.timezone.utc)
@@ -124,21 +161,13 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
                 if not check_date.tzinfo:
                     check_date = check_date.replace(tzinfo=datetime.timezone.utc)
 
-                # TEMP DEBUG LOGGING - REMOVE LATER
-                # logger.debug(f"[DEBUG] Examined paper {count_examined}: '{result.title}' dated {res_date}. Cutoff: {check_date}")
-
                 if res_date < check_date:
-                    # If we are sorting by date (newest first), encountering an old paper means
-                    # all subsequent papers are also old. We can stop.
+                    # If we find a paper older than the cutoff
                     if sort_by_date:
-                        # TEMP DEBUG LOGGING - REMOVE LATER
-                        logger.info(f"[DEBUG] Encountered old paper '{result.title}' ({res_date} < {check_date}). Stopping search early.")
+                        # Optimization: if sorted by date, all subsequent are older
                         break
-                    else:
-                        continue
-            
-            # TEMP DEBUG LOGGING - REMOVE LATER
-            # logger.debug(f"[DEBUG] Accepting paper: {result.title}")
+                    # Otherwise (Relevance sort), just skip this one
+                    continue
 
             results.append({
                 "title": result.title,
@@ -147,13 +176,11 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
                 "published": result.published.strftime("%Y-%m-%d"),
                 "pdf_url": result.pdf_url
             })
-        
-        # TEMP DEBUG LOGGING - REMOVE LATER
-        logger.info(f"[DEBUG] Arxiv search completed. Examined: {count_examined}, Returning: {len(results)}")
             
     except Exception as e:
         logger.error(f"Error searching arXiv: {e}")
-        return []
+        # Return whatever we found so far instead of empty list if possible, or just empty
+        return results
         
     return results
 

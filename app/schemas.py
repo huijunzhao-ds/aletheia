@@ -5,6 +5,7 @@ class ArxivConfig(BaseModel):
     categories: List[str] = []
     authors: List[str] = []
     keywords: List[str] = []
+    keywordLogic: str = "OR" # "OR" (default) or "AND"
     journalReference: Optional[str] = None
 
 class RadarCreate(BaseModel):

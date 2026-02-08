@@ -651,7 +651,10 @@ async def execute_radar_sync(user_id: str, radar_id: str):
                         kw_terms.append(f"abs:{clean_k}")
                 
                 if kw_terms:
-                    kw_part = " OR ".join(kw_terms)
+                    # Respect user preference: match ALL keywords (AND) or ANY keyword (OR)
+                    logic = arxiv_config.get('keywordLogic', 'OR').upper()
+                    join_op = " AND " if logic == "AND" else " OR "
+                    kw_part = join_op.join(kw_terms)
                     terms.append(f"({kw_part})")
         
         if terms:
@@ -664,23 +667,41 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         cutoff_time = None
         now = datetime.datetime.now(datetime.timezone.utc)
         
-        # Set cutoff based on frequency with a safety buffer
-        if frequency == 'Hourly':
-            cutoff_time = now - datetime.timedelta(hours=2)
-            max_search = 20
-        elif frequency == 'Daily':
-            cutoff_time = now - datetime.timedelta(days=2)
-            max_search = 50
-        elif frequency == 'Weekly':
-            cutoff_time = now - datetime.timedelta(days=8)
-            max_search = 100
-        elif frequency == 'Monthly':
-            cutoff_time = now - datetime.timedelta(days=32)
-            max_search = 200
+        # Check for system log of last successful sweep (lastUpdated)
+        last_updated_str = radar_data.get('lastUpdated')
+        parsed_last_updated = None
+        
+        if last_updated_str and last_updated_str not in ["Never", "Just updated"]:
+            try:
+                # Format from save_radar_summary is "%Y-%m-%d %H:%M"
+                # It assumes UTC as per the save function
+                parsed = datetime.datetime.strptime(last_updated_str, "%Y-%m-%d %H:%M")
+                parsed_last_updated = parsed.replace(tzinfo=datetime.timezone.utc)
+            except Exception as e:
+                logger.warning(f"Failed to parse lastUpdated '{last_updated_str}' for radar {radar_id}: {e}")
+
+        if parsed_last_updated:
+            cutoff_time = parsed_last_updated
+            max_search = 1000 # Use a large limit, tool will fetch all since cutoff
+            logger.info(f"Using last successful sweep time as cutoff: {cutoff_time}")
         else:
-            # Default fallback
-            cutoff_time = now - datetime.timedelta(days=2)
-            max_search = 30
+            # Initial sweep or fallback based on frequency
+            if frequency == 'Hourly':
+                cutoff_time = now - datetime.timedelta(hours=2)
+                max_search = 20
+            elif frequency == 'Daily':
+                cutoff_time = now - datetime.timedelta(days=2)
+                max_search = 50
+            elif frequency == 'Weekly':
+                cutoff_time = now - datetime.timedelta(days=8)
+                max_search = 100
+            elif frequency == 'Monthly':
+                cutoff_time = now - datetime.timedelta(days=32)
+                max_search = 200
+            else:
+                # Default fallback
+                cutoff_time = now - datetime.timedelta(days=2)
+                max_search = 30
 
         logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query} since {cutoff_time}")
         real_papers = search_arxiv(query=search_query, max_results=max_search, sort_by_date=True, published_after=cutoff_time)

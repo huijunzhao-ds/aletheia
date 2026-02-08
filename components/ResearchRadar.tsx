@@ -151,6 +151,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
             categories: string;
             authors: string;
             keywords: string;
+            keywordLogic?: string;
             journalReference?: string;
         };
     }>({
@@ -184,6 +185,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
 
     const handleEditRadar = (radar: RadarItem) => {
         setEditingRadarId(radar.id);
+        const logic = (radar.arxivConfig as any)?.keywordLogic || 'OR';
         setNewRadar({
             title: radar.title,
             description: radar.description,
@@ -195,11 +197,13 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                 categories: radar.arxivConfig.categories.join(', '),
                 authors: radar.arxivConfig.authors.join(', '),
                 keywords: radar.arxivConfig.keywords.join(', '),
+                keywordLogic: logic,
                 journalReference: radar.arxivConfig.journalReference || ''
             } : {
                 categories: '',
                 authors: '',
                 keywords: '',
+                keywordLogic: 'OR',
                 journalReference: ''
             }
         });
@@ -221,6 +225,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                 categories: '',
                 authors: '',
                 keywords: '',
+                keywordLogic: 'OR',
                 journalReference: ''
             }
         });
@@ -244,6 +249,7 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                     categories: newRadar.arxivConfig?.categories?.split(',').map(s => s.trim()).filter(Boolean) || [],
                     authors: newRadar.arxivConfig?.authors?.split(',').map(s => s.trim()).filter(Boolean) || [],
                     keywords: newRadar.arxivConfig?.keywords?.split(',').map(s => s.trim()).filter(Boolean) || [],
+                    keywordLogic: newRadar.arxivConfig?.keywordLogic || 'OR',
                     journalReference: newRadar.arxivConfig?.journalReference || ''
                 } : null
             };
@@ -808,7 +814,37 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-medium text-zinc-400 mb-1">Keywords (Abstract)</label>
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <label className="block text-xs font-medium text-zinc-400">Keywords</label>
+                                                    <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-700/50 scale-90 origin-right">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setNewRadar({
+                                                                ...newRadar,
+                                                                arxivConfig: { ...newRadar.arxivConfig!, keywordLogic: 'OR' }
+                                                            })}
+                                                            className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${newRadar.arxivConfig?.keywordLogic !== 'AND'
+                                                                ? 'bg-zinc-700 text-white shadow-sm'
+                                                                : 'text-zinc-500 hover:text-zinc-300'
+                                                                }`}
+                                                        >
+                                                            ANY (OR)
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setNewRadar({
+                                                                ...newRadar,
+                                                                arxivConfig: { ...newRadar.arxivConfig!, keywordLogic: 'AND' }
+                                                            })}
+                                                            className={`px-2 py-0.5 text-[10px] font-medium rounded-md transition-colors ${newRadar.arxivConfig?.keywordLogic === 'AND'
+                                                                ? 'bg-blue-600 text-white shadow-sm'
+                                                                : 'text-zinc-500 hover:text-zinc-300'
+                                                                }`}
+                                                        >
+                                                            ALL (AND)
+                                                        </button>
+                                                    </div>
+                                                </div>
                                                 <input
                                                     type="text"
                                                     value={newRadar.arxivConfig?.keywords || ''}
@@ -820,8 +856,13 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                                         }
                                                     })}
                                                     className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                                                    placeholder="e.g. reinforcement learning"
+                                                    placeholder="e.g. Agents, LLM, prompt"
                                                 />
+                                                <p className="text-[10px] text-zinc-500 mt-1">
+                                                    {newRadar.arxivConfig?.keywordLogic === 'AND'
+                                                        ? 'Must contain ALL of these terms (narrow search)'
+                                                        : 'Contain AT LEAST ONE of these terms (broad search)'}
+                                                </p>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-medium text-zinc-400 mb-1">Journal Reference</label>
