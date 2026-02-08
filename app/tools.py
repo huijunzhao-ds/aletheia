@@ -106,7 +106,13 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
     
     results = []
     try:
+        # TEMP DEBUG LOGGING - REMOVE LATER
+        logger.info(f"[DEBUG] Starting arxiv search. Query: {query}, Max: {max_results}, SortByDate: {sort_by_date}, Cutoff: {published_after}")
+        
+        count_examined = 0
         for result in client.results(search):
+            count_examined += 1
+            
             # Time filter check
             if published_after:
                 # Ensure timezone awareness consistency (arxiv results are usually UTC)
@@ -118,13 +124,21 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
                 if not check_date.tzinfo:
                     check_date = check_date.replace(tzinfo=datetime.timezone.utc)
 
+                # TEMP DEBUG LOGGING - REMOVE LATER
+                # logger.debug(f"[DEBUG] Examined paper {count_examined}: '{result.title}' dated {res_date}. Cutoff: {check_date}")
+
                 if res_date < check_date:
                     # If we are sorting by date (newest first), encountering an old paper means
                     # all subsequent papers are also old. We can stop.
                     if sort_by_date:
+                        # TEMP DEBUG LOGGING - REMOVE LATER
+                        logger.info(f"[DEBUG] Encountered old paper '{result.title}' ({res_date} < {check_date}). Stopping search early.")
                         break
                     else:
                         continue
+            
+            # TEMP DEBUG LOGGING - REMOVE LATER
+            # logger.debug(f"[DEBUG] Accepting paper: {result.title}")
 
             results.append({
                 "title": result.title,
@@ -133,6 +147,10 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, p
                 "published": result.published.strftime("%Y-%m-%d"),
                 "pdf_url": result.pdf_url
             })
+        
+        # TEMP DEBUG LOGGING - REMOVE LATER
+        logger.info(f"[DEBUG] Arxiv search completed. Examined: {count_examined}, Returning: {len(results)}")
+            
     except Exception as e:
         logger.error(f"Error searching arXiv: {e}")
         return []

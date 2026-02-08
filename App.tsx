@@ -413,13 +413,13 @@ const App: React.FC = () => {
       });
 
       if (syncResponse.ok) {
-        // 3. Poll for results (max 20 attempts * 3s = 60s)
+        // 3. Poll for results (max 12 attempts * 10s = 120s)
         let attempts = 0;
-        const maxAttempts = 20;
+        const maxAttempts = 12;
 
         while (attempts < maxAttempts) {
           attempts++;
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
 
           try {
             const itemsResponse = await fetch(`/api/radars/${selectedRadar.id}/items`, {

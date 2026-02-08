@@ -610,8 +610,19 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         if arxiv_config.get('keywords'):
             keywords = arxiv_config.get('keywords')
             if isinstance(keywords, list):
-                kw_part = " OR ".join([f"all:{k}" for k in keywords])
-                terms.append(f"({kw_part})")
+                # Using stricter scope: Title OR Abstract
+                # We want any of the keywords to appear in EITHER title OR abstract
+                # Construct as: (ti:k1 OR abs:k1 OR ti:k2 OR abs:k2 ...)
+                kw_terms = []
+                for k in keywords:
+                    clean_k = k.strip()
+                    if clean_k:
+                        kw_terms.append(f"ti:{clean_k}")
+                        kw_terms.append(f"abs:{clean_k}")
+                
+                if kw_terms:
+                    kw_part = " OR ".join(kw_terms)
+                    terms.append(f"({kw_part})")
         
         if terms:
             search_query = " AND ".join(terms)
