@@ -12,26 +12,12 @@ env:
   SERVICE_NAME: aletheia
 
 jobs:
-  deploy:
+  # Job for QA Environment
+  deploy-qa:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
-
-    # Strategy matrix to handle environment-specific variables based on branch
-    strategy:
-      matrix:
-        environment: [qa, prod]
-        include:
-          - environment: qa
-            branch: develop
-            suffix: -qa
-          - environment: prod
-            branch: main
-            suffix: ''
-            
-    # Filter job execution based on branch
-    if: (github.ref == 'refs/heads/main' && matrix.environment == 'prod') || (github.ref == 'refs/heads/develop' && matrix.environment == 'qa')
-
-    environment: ${{ matrix.environment }}
-
+    environment: qa
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -50,7 +36,7 @@ jobs:
 
     - name: Build and Push Container
       run: |-
-        IMAGE_TAG="us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}"
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-qa"
         
         docker build -t $IMAGE_TAG \
           --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
@@ -63,13 +49,61 @@ jobs:
         docker push $IMAGE_TAG
         echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
 
-    - name: Deploy to Cloud Run
+    - name: Deploy to Cloud Run (QA)
       uses: google-github-actions/deploy-cloudrun@v2
       with:
-        service: ${{ env.SERVICE_NAME }}${{ matrix.suffix }}
+        service: ${{ env.SERVICE_NAME }}-qa
         region: ${{ env.REGION }}
         image: ${{ env.IMAGE_TAG }}
         env_vars: |-
           GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          ENV=${{ matrix.environment }}
+          ENV=qa
+
+  # Job for Production Environment
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Google Auth
+      id: auth
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Authorize Docker
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev
+
+    - name: Build and Push Container
+      run: |-
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-prod"
+        
+        docker build -t $IMAGE_TAG \
+          --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
+          --build-arg VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }} \
+          --build-arg VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }} \
+          --build-arg VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }} \
+          --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }} \
+          --build-arg VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }} .
+          
+        docker push $IMAGE_TAG
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Deploy to Cloud Run (Prod)
+      uses: google-github-actions/deploy-cloudrun@v2
+      with:
+        service: ${{ env.SERVICE_NAME }}
+        region: ${{ env.REGION }}
+        image: ${{ env.IMAGE_TAG }}
+        env_vars: |-
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          ENV=production
