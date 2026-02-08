@@ -618,8 +618,31 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         else:
             search_query = radar_data.get('title')
 
-        logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query}")
-        real_papers = search_arxiv(query=search_query, max_results=6, sort_by_date=True)
+        # Determine time window based on frequency
+        frequency = radar_data.get('frequency', 'Daily')
+        cutoff_time = None
+        now = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Set cutoff based on frequency with a safety buffer
+        if frequency == 'Hourly':
+            cutoff_time = now - datetime.timedelta(hours=2)
+            max_search = 20
+        elif frequency == 'Daily':
+            cutoff_time = now - datetime.timedelta(days=2)
+            max_search = 50
+        elif frequency == 'Weekly':
+            cutoff_time = now - datetime.timedelta(days=8)
+            max_search = 100
+        elif frequency == 'Monthly':
+            cutoff_time = now - datetime.timedelta(days=32)
+            max_search = 200
+        else:
+            # Default fallback
+            cutoff_time = now - datetime.timedelta(days=2)
+            max_search = 30
+
+        logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query} since {cutoff_time}")
+        real_papers = search_arxiv(query=search_query, max_results=max_search, sort_by_date=True, published_after=cutoff_time)
         
         if real_papers:
             # We no longer store the raw papers as captured items.

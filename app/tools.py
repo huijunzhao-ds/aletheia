@@ -15,7 +15,8 @@
 import os
 import arxiv
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
+import datetime
 from google.adk.tools import google_search
 
 from contextvars import ContextVar
@@ -77,7 +78,7 @@ def web_search(query: str) -> str:
         return f"Search failed: {e}"
 
 
-def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False) -> List[Dict[str, str]]:
+def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False, published_after: Optional[datetime.datetime] = None) -> List[Dict[str, str]]:
     """
     Search for papers on arXiv.
     
@@ -85,12 +86,16 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False) -
         query: The search query string.
         max_results: The maximum number of results to return.
         sort_by_date: If True, sorts by latest submitted date. Otherwise sorts by relevance.
+        published_after: Optional datetime. If provided, excludes papers published before this time.
         
     Returns:
         A list of dictionaries containing paper details (title, summary, authors, pdf_url).
     """
     client = arxiv.Client()
     
+    # If we are filtering by a specific time window, we likely want to see ALL matching papers in that window,
+    # not just the top 5 (which might be old if we use Relevance).
+    # However, max_results still caps the fetch to be safe.
     sort_criterion = arxiv.SortCriterion.SubmittedDate if sort_by_date else arxiv.SortCriterion.Relevance
     
     search = arxiv.Search(
@@ -102,6 +107,25 @@ def search_arxiv(query: str, max_results: int = 5, sort_by_date: bool = False) -
     results = []
     try:
         for result in client.results(search):
+            # Time filter check
+            if published_after:
+                # Ensure timezone awareness consistency (arxiv results are usually UTC)
+                res_date = result.published
+                if not res_date.tzinfo:
+                    res_date = res_date.replace(tzinfo=datetime.timezone.utc)
+                
+                check_date = published_after
+                if not check_date.tzinfo:
+                    check_date = check_date.replace(tzinfo=datetime.timezone.utc)
+
+                if res_date < check_date:
+                    # If we are sorting by date (newest first), encountering an old paper means
+                    # all subsequent papers are also old. We can stop.
+                    if sort_by_date:
+                        break
+                    else:
+                        continue
+
             results.append({
                 "title": result.title,
                 "summary": result.summary,
