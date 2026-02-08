@@ -36,7 +36,7 @@ jobs:
 
     - name: Build and Push Container
       run: |-
-        IMAGE_TAG="us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-qa"
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-qa"
         
         docker build -t $IMAGE_TAG \
           --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
@@ -84,7 +84,7 @@ jobs:
 
     - name: Build and Push Container
       run: |-
-        IMAGE_TAG="us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-prod"
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/${{ env.SERVICE_NAME }}/app:${{ github.sha }}-prod"
         
         docker build -t $IMAGE_TAG \
           --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
