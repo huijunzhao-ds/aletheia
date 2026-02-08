@@ -157,8 +157,8 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
         title: '',
         description: '',
         sources: [],
-        frequency: 'Daily',
-        outputMedia: 'Text Digest',
+        frequency: 'Hourly',
+        outputMedia: 'Audio Podcast',
         customPrompt: ''
     });
 
@@ -214,8 +214,8 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
             title: '',
             description: '',
             sources: [],
-            frequency: 'Daily',
-            outputMedia: 'Text Digest',
+            frequency: 'Hourly',
+            outputMedia: 'Audio Podcast',
             customPrompt: '',
             arxivConfig: {
                 categories: '',
@@ -345,8 +345,8 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
             title: '',
             description: '',
             sources: [],
-            frequency: 'Daily',
-            outputMedia: 'Text Digest',
+            frequency: 'Hourly',
+            outputMedia: 'Audio Podcast',
             customPrompt: '',
             arxivConfig: {
                 categories: '',
@@ -853,8 +853,10 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                             onChange={(e) => setNewRadar({ ...newRadar, frequency: e.target.value })}
                                             className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                                         >
+                                            <option>Hourly</option>
                                             <option>Daily</option>
                                             <option>Weekly</option>
+                                            <option>Monthly</option>
                                         </select>
                                     </div>
                                     <div>
@@ -868,7 +870,6 @@ export const ResearchRadar: React.FC<ResearchRadarProps> = ({
                                         >
                                             <option>Text Digest</option>
                                             <option>Audio Podcast</option>
-                                            <option>Visual Dashboard</option>
                                         </select>
                                     </div>
                                 </div>

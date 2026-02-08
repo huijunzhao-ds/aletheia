@@ -99,9 +99,18 @@ async def scheduled_radar_sync_all():
 
                 should_run = False
                 
-                if freq == 'Daily':
-                    if not already_run_today:
+                if freq == 'Hourly':
+                    # Check if already run THIS hour
+                    last_hour_str = last_updated_str[:13] if len(last_updated_str) >= 13 else ""
+                    current_hour_str = today.strftime("%Y-%m-%d %H")
+                    if last_hour_str != current_hour_str:
                         should_run = True
+                elif freq == 'Daily':
+                    # Only run once a day, preferably at 00:00 hour UTC, or catchup if missed
+                    # But if we run hourly, we need to make sure we don't run it 24 times a day!
+                    # So we check if we have run TODAY at all.
+                    if not already_run_today:
+                         should_run = True
                 elif freq == 'Weekly':
                     if is_monday and not already_run_today:
                         should_run = True
@@ -121,12 +130,12 @@ async def scheduled_radar_sync_all():
 
 @app.on_event("startup")
 async def startup_event():
-    # Schedule the proactive sync at 0:00 every day
-    # Note: Use hour=0, minute=0 for production. Set to shorter for testing if needed.
+    # Schedule the proactive sync at minute 0 of every hour
+    # This allows Hourly radars to run, and Daily/Weekly/Monthly to run at 0:00 UTC (or their respective hour)
     scheduler.add_job(
         scheduled_radar_sync_all, 
-        CronTrigger(hour=0, minute=0),
-        id="daily_radar_sync",
+        CronTrigger(minute=0),
+        id="global_radar_sync",
         replace_existing=True
     )
     scheduler.start()
@@ -135,7 +144,7 @@ async def startup_event():
     import asyncio
     asyncio.create_task(scheduled_radar_sync_all())
     
-    logger.info("APScheduler started: Daily proactive sync scheduled at 0:00 and initial check triggered.")
+    logger.info("APScheduler started: Proactive sync scheduled hourly at minute 0 and initial check triggered.")
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -460,9 +469,8 @@ async def create_radar(radar: RadarCreate, user_id: str = Depends(get_current_us
     logger.info(f"Creating radar for user {user_id}: {radar.title}")
     from app.db import user_data_service
     try:
-        # Validate frequency
-        if radar.frequency not in ["Daily", "Weekly", "Monthly"]:
-            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily', 'Weekly', or 'Monthly'.")
+        if radar.frequency not in ["Hourly", "Daily", "Weekly", "Monthly"]:
+            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Hourly', 'Daily', 'Weekly', or 'Monthly'.")
 
         data = radar.model_dump()
         data["created_at"] = datetime.datetime.now(datetime.timezone.utc)
@@ -693,8 +701,9 @@ async def update_radar(radar_id: str, radar: RadarCreate, user_id: str = Depends
     logger.info(f"Updating radar {radar_id} for user {user_id}")
     from app.db import user_data_service
     try:
-        if radar.frequency not in ["Daily", "Weekly"]:
-            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Daily' or 'Weekly'.")
+        # Validate frequency
+        if radar.frequency not in ["Hourly", "Daily", "Weekly", "Monthly"]:
+            raise HTTPException(status_code=400, detail="Invalid frequency. Must be 'Hourly', 'Daily', 'Weekly', or 'Monthly'.")
 
         data = radar.model_dump()
         data["lastUpdated"] = "Just updated"
