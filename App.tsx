@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
-import { ResearchMode, Message } from './types';
+import { Dashboard } from './components/Dashboard';
+import { Message, RadarItem } from './types';
 import { v4 as uuidv4 } from 'uuid';
 import { auth } from './firebaseConfig';
 import {
@@ -11,12 +12,21 @@ import {
   signOut,
   User
 } from "firebase/auth";
+import { DocumentViewer } from './components/DocumentViewer';
+
+import { ComingSoon } from './components/ComingSoon';
+import { RadarItemsList } from './components/RadarItemsList';
+import { ResearchRadar } from './components/ResearchRadar';
+import { NavBar } from './components/NavBar';
+
+type ViewState = 'dashboard' | 'exploration' | 'radar' | 'projects' | 'radar-chat';
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [sessionId, setSessionId] = useState<string>(uuidv4());
-  const [threads, setThreads] = useState<{ id: string, title: string }[]>([]);
+  const [threads, setThreads] = useState<{ id: string, title: string, radarId?: string }[]>([]);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -25,10 +35,23 @@ const App: React.FC = () => {
       timestamp: new Date(),
     }
   ]);
-  const [mode, setMode] = useState<ResearchMode>(ResearchMode.QUICK);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [activeDocument, setActiveDocument] = useState<{ url: string, name: string } | null>(null);
+  const [sessionDocuments, setSessionDocuments] = useState<{ name: string, url: string }[]>([]);
+  const [selectedRadar, setSelectedRadar] = useState<RadarItem | null>(null);
+  const [radarItems, setRadarItems] = useState<any[]>([]);
+  const [isRadarItemsLoading, setIsRadarItemsLoading] = useState(false);
+  const [radars, setRadars] = useState<{ id: string, title: string }[]>([]);
+  const [projects, setProjects] = useState<{ id: string, title: string }[]>([]);
+  const [explorationItems, setExplorationItems] = useState<any[]>([]);
+  const [isAddDocModalOpen, setIsAddDocModalOpen] = useState(false);
+  const [addDocMode, setAddDocMode] = useState<'url' | 'upload'>('url');
+  const [addDocUrl, setAddDocUrl] = useState('');
+  const [addDocTitle, setAddDocTitle] = useState('');
+  const [addDocFile, setAddDocFile] = useState<File | null>(null);
+  const [isAddingDoc, setIsAddingDoc] = useState(false);
 
   const persistThread = async (id: string, title: string) => {
     // NOTE: Thread persistence to the backend is currently disabled because
@@ -56,38 +79,162 @@ const App: React.FC = () => {
       content: 'Starting a new research thread. How can I help?',
       timestamp: new Date(),
     }]);
+    setActiveDocument(null);
+    setSessionDocuments([]);
   };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+      // Reset view to dashboard on login
+      if (currentUser) {
+        setCurrentView('dashboard');
+      }
     });
     return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const fetchThreads = async () => {
+    const fetchGlobalData = async () => {
       if (!user) return;
       try {
         const token = await user.getIdToken();
-        const response = await fetch('/api/threads', {
+        // Fetch threads
+        // Fetch threads based on initial view (likely dashboard -> exploration)
+        const threadsRes = await fetch('/api/threads?agent_type=exploration', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const data = await response.json();
-        if (data.threads) {
-          setThreads(data.threads);
+        const threadsData = await threadsRes.json();
+        if (threadsData.threads) setThreads(threadsData.threads);
+
+        // Fetch radars
+        const radarsRes = await fetch('/api/radars', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (radarsRes.ok) {
+          const radarsData = await radarsRes.json();
+          setRadars(radarsData.map((r: any) => ({ id: r.id, title: r.title })));
         }
-        // Clear any previous error status related to loading threads
+
+        // Fetch exploration items
+        const explRes = await fetch('/api/exploration', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (explRes.ok) {
+          const explData = await explRes.json();
+          setExplorationItems(explData.items || []);
+        }
+
+        // Projects (placeholder)
+        setProjects([{ id: 'proj-1', title: 'Deep Learning Review' }, { id: 'proj-2', title: 'Agentic Workflows' }]);
+
         setCurrentStatus('');
       } catch (error) {
-        console.error("Failed to fetch threads", error);
-        // Inform the user that loading their thread history failed
-        setCurrentStatus('Failed to load your previous threads. Some history may be missing.');
+        console.error("Failed to fetch global data", error);
       }
     };
-    fetchThreads();
+    if (user) {
+      fetchGlobalData();
+    }
   }, [user]);
+
+  useEffect(() => {
+    if (currentView === 'dashboard' || currentView === 'radar') {
+      setIsSidebarOpen(false);
+    } else {
+      setIsSidebarOpen(true);
+    }
+
+    // Refresh threads when switching major contexts
+    const refreshThreads = async () => {
+      if (!user) return;
+      const token = await user.getIdToken();
+
+      let agentType = 'exploration';
+      if (currentView === 'projects') agentType = 'projects';
+      if (currentView === 'radar-chat') agentType = 'radar';
+
+      // If entering radar-chat, we usually handle thread fetching in handleSelectRadar
+      if (currentView !== 'radar-chat') {
+        try {
+          const res = await fetch(`/api/threads?agent_type=${agentType}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.threads) setThreads(data.threads);
+        } catch (e) {
+          console.error("Error refreshing threads", e);
+        }
+      }
+    };
+    refreshThreads();
+  }, [currentView, user]);
+
+  // Filter threads based on context
+  const isRadarChat = currentView === 'radar-chat';
+  const filteredThreads = useMemo(() => {
+    return isRadarChat
+      ? threads.filter(t => t.radarId === selectedRadar?.id)
+      : (currentView === 'exploration' ? threads.filter(t => !t.radarId) : []);
+  }, [isRadarChat, currentView, threads, selectedRadar?.id]);
+
+  const radarDocuments = useMemo(() => radarItems.map(item => {
+    const isSummary = !!item.parent;
+    const dateStr = item.timestamp ? item.timestamp.split('T')[0].replace(/-/g, '') : '20260201';
+    const sanitizedTitle = (item.title || 'summary').toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 30);
+
+    // Force .md for all text digests, even if they were legacy Arxiv PDFs
+    let extension = 'md';
+    let assetType = 'markdown';
+
+    if (item.asset_type === 'audio' || (item.asset_url && item.asset_url.endsWith('.mp3'))) {
+      extension = 'mp3';
+      assetType = 'audio';
+    }
+
+    const typeLabel = assetType === 'audio' ? 'podcast' : 'digest';
+
+    // For markdown summaries, if we don't have a real asset_url yet,
+    // we can generate a data URI from the summary text for download
+    let downloadUrl = item.asset_url || item.url || '#';
+    if (assetType === 'markdown' && !item.asset_url && item.summary) {
+      const markdownContent = `# ${item.title}\n\n${item.summary}`;
+      downloadUrl = `data:text/markdown;charset=utf-8,${encodeURIComponent(markdownContent)}`;
+    }
+
+    return {
+      id: item.id,
+      name: `${dateStr}-${sanitizedTitle}-${typeLabel}.${extension}`,
+      url: downloadUrl,
+      isRadarAsset: true,
+      assetType: assetType,
+      summary: item.summary,
+      title: item.title
+    };
+  }), [radarItems]);
+
+  const explorationDocs = useMemo(() => explorationItems.map(item => {
+    // Prefer downloaded local asset, fallback to original URL
+    const url = item.localAssetPath || item.url || item.pdf_url || '#';
+    let name = item.title || "Untitled Paper";
+    const ext = item.localAssetType || (url.endsWith('.pdf') ? 'pdf' : 'html');
+
+    // Ensure name has extension
+    if (!name.toLowerCase().endsWith(`.${ext}`)) {
+      name = `${name}.${ext}`;
+    }
+
+    return {
+      id: item.id,
+      name: name,
+      url: url,
+      isRadarAsset: false, // Treat as "To Review"
+      isArchived: item.isArchived || false,
+      summary: item.summary,
+      title: item.title
+    };
+  }), [explorationItems]);
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
@@ -98,22 +245,43 @@ const App: React.FC = () => {
     }
   };
 
+
+
   const handleSignOut = () => signOut(auth);
 
-  const handleSelectThread = async (id: string) => {
+  const handleSelectThread = async (id: string, overrideAgentType?: string) => {
     setIsProcessing(true);
     setCurrentStatus('Loading research thread...');
     try {
       const token = await user?.getIdToken();
-      const response = await fetch(`/api/session/${id}`, {
+      let agentType = overrideAgentType || 'exploration';
+      if (!overrideAgentType) {
+        if (currentView === 'projects') agentType = 'projects';
+        if (currentView === 'radar-chat') agentType = 'radar';
+      }
+
+      const response = await fetch(`/api/session/${id}?agent_type=${agentType}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      if (data.messages && data.messages.length > 0) {
+
+      // Load history messages if present
+      if (data.messages) {
         setMessages(data.messages.map((m: any) => ({
           ...m,
           timestamp: new Date(m.timestamp)
         })));
+
+        // Restore documents and active document
+        if (data.documents && data.documents.length > 0) {
+          setSessionDocuments(data.documents);
+          // Auto-open the most recent document
+          setActiveDocument(data.documents[data.documents.length - 1]);
+        } else {
+          setSessionDocuments([]);
+          setActiveDocument(null);
+        }
+
         setSessionId(id);
       }
     } catch (error) {
@@ -121,30 +289,482 @@ const App: React.FC = () => {
       setCurrentStatus('Failed to load the selected thread. Please try again.');
     } finally {
       setIsProcessing(false);
-      if (!currentStatus.includes('Failed')) {
+      // Only clear status if it wasn't an error
+      if (!currentStatus.toLowerCase().includes('failed')) {
         setCurrentStatus('');
       }
     }
   };
 
-  const handleSendMessage = async (content: string) => {
-    if (!content.trim() || !user) return;
+  const handleSelectRadar = async (radar: RadarItem) => {
+    setSelectedRadar(radar);
+    const id = radar.id;
+    setCurrentView('radar-chat');
+    setIsSidebarOpen(true);
+
+    // Clear previous session state before starting/resuming radar session
+    setMessages([{
+      id: 'briefing-loading',
+      role: 'assistant',
+      content: 'Initializing radar workspace...',
+      timestamp: new Date()
+    }]);
+    setSessionDocuments([]);
+    setActiveDocument(null);
+
+    const user = auth.currentUser;
+    if (!user) {
+      setMessages([{
+        id: uuidv4(),
+        role: 'assistant',
+        content: 'You must be signed in to access this radar. Please sign in and try again.',
+        timestamp: new Date()
+      }]);
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+
+      // 1. Fetch briefing and determine scenario
+      const briefingResponse = await fetch(`/api/radars/briefing?radar_id=${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      let briefingData = { summary: "", scenario: "new" };
+      if (briefingResponse.ok) {
+        briefingData = await briefingResponse.json();
+      }
+
+      // 2. Fetch threads for this radar specifically to decide if we resume
+      const threadsRes = await fetch(`/api/threads?radar_id=${id}&agent_type=radar`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const threadsData = await threadsRes.json();
+      const radarThreads = threadsData.threads || [];
+
+      // Update global threads with new items (deduplicated)
+      setThreads(prev => {
+        const existingIds = new Set(prev.map(t => t.id));
+        const newThreads = radarThreads.filter((t: any) => !existingIds.has(t.id));
+        return [...newThreads, ...prev];
+      });
+
+      if (briefingData.scenario === 'resuming' && radarThreads.length > 0) {
+        // Scenario 2.1: Pickup existing work - Load the latest thread exactly as it was
+        const latestThread = radarThreads[0]; // Assuming backend returns sorted by date
+        // Explicitly pass 'radar' context to avoid race condition with setCurrentView
+        await handleSelectThread(latestThread.id, 'radar');
+      } else {
+        // Scenarios 2.2 and 2.3: New parse or new radar
+        setMessages([{
+          id: uuidv4(),
+          role: 'assistant',
+          content: briefingData.summary,
+          timestamp: new Date()
+        }]);
+        setSessionId(uuidv4());
+      }
+
+      // 3. Fetch items (papers/artifacts)
+      setIsRadarItemsLoading(true);
+      const itemsResponse = await fetch(`/api/radars/${id}/items`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (itemsResponse.ok) {
+        const items = await itemsResponse.json();
+        setRadarItems(items);
+      }
+    } catch (error) {
+      console.error("Error fetching radar details:", error);
+      setMessages([{
+        id: uuidv4(),
+        role: 'assistant',
+        content: "I encountered an error trying to initialize this radar. Please try again or check your connection.",
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsRadarItemsLoading(false);
+    }
+  };
+
+  const handleSyncRadar = async () => {
+    if (!selectedRadar || !user) return;
+
+    setIsRadarItemsLoading(true);
+    // Keep track of initial count to know if we found something new
+    const initialCount = radarItems.length;
+
+    try {
+      const token = await user.getIdToken();
+
+      // 1. Notify user in chat
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: '_Agent scanning specialized sources for new research papers..._',
+        timestamp: new Date()
+      }]);
+
+      // 2. Trigger the background sync
+      const syncResponse = await fetch(`/api/radars/${selectedRadar.id}/sync`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (syncResponse.ok) {
+        // 3. Poll for results (max 12 attempts * 10s = 120s)
+        let attempts = 0;
+        const maxAttempts = 12;
+
+        while (attempts < maxAttempts) {
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10s
+
+          try {
+            const itemsResponse = await fetch(`/api/radars/${selectedRadar.id}/items`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (itemsResponse.ok) {
+              const items = await itemsResponse.json();
+
+              // If we found new items (count increased) or if we just wanted *any* items and we got them
+              if (items.length > initialCount) {
+                setRadarItems(items);
+                // Add success message
+                setMessages(prev => [...prev, {
+                  id: uuidv4(),
+                  role: 'assistant',
+                  content: `**Sync Complete.** Found ${items.length - initialCount} new items.`,
+                  timestamp: new Date()
+                }]);
+                break; // Exit polling
+              }
+            }
+          } catch (e) {
+            console.error("Polling error:", e);
+          }
+        }
+
+        if (attempts >= maxAttempts) {
+          setMessages(prev => [...prev, {
+            id: uuidv4(),
+            role: 'assistant',
+            content: `Sync timed out or no new items were found.`,
+            timestamp: new Date()
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing radar:", error);
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Error syncing radar: ${error}`,
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsRadarItemsLoading(false);
+    }
+  };
+
+  const handleDeleteRadarItem = async (itemId: string) => {
+    if (!selectedRadar || !user) return;
+
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/radars/${selectedRadar.id}/items/${itemId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        setRadarItems(prev => prev.filter(item => item.id !== itemId));
+      }
+    } catch (error) {
+      console.error("Error deleting radar item:", error);
+    }
+  };
+
+  const handleDeleteThread = async (threadId: string) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+      let agentType = 'exploration';
+      if (currentView === 'projects') agentType = 'projects';
+      if (currentView === 'radar-chat') agentType = 'radar';
+
+      const response = await fetch(`/api/threads/${threadId}?agent_type=${agentType}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        setThreads(prev => prev.filter(t => t.id !== threadId));
+        if (sessionId === threadId) {
+          setSessionId(uuidv4());
+          setMessages([{
+            id: 'welcome',
+            role: 'assistant',
+            content: 'Starting a new research thread. How can I help?',
+            timestamp: new Date(),
+          }]);
+          setActiveDocument(null);
+          setSessionDocuments([]);
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting thread:", error);
+    }
+  };
+
+  const handleSaveToExploration = async (item: any) => {
+    if (!user) return;
+
+    // 1. Notify start
+    setMessages(prev => [...prev, {
+      id: uuidv4(),
+      role: 'assistant',
+      content: `_Downloading "${item.title}" to Exploration..._`,
+      timestamp: new Date()
+    }]);
+
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/exploration/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...item,
+          savedAt: new Date().toISOString(),
+          sourceRadarId: selectedRadar?.id
+        })
+      });
+      if (response.ok) {
+        // Show a brief success toast (using global status for now)
+        setCurrentStatus(`Saved "${item.title}" to your exploration.`);
+        setTimeout(() => setCurrentStatus(''), 3000);
+
+        // 2. Notify completion
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          role: 'assistant',
+          content: `**Download completed.** \n\nPlease check "To Review" in the Exploration view.`,
+          timestamp: new Date()
+        }]);
+
+        // Refresh exploration items to show in sidebar immediately
+        fetch('/api/exploration', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).then(res => res.json()).then(data => {
+          if (data.items) setExplorationItems(data.items);
+        });
+      }
+    } catch (error) {
+      console.error("Error saving to exploration:", error);
+      setMessages(prev => [...prev, {
+        id: uuidv4(),
+        role: 'assistant',
+        content: `Failed to save "${item.title}". Please try again.`,
+        timestamp: new Date()
+      }]);
+    }
+  };
+
+  const handleSaveToProject = async (item: any) => {
+    if (!user) return;
+    try {
+      const token = await user.getIdToken();
+
+      const payload = {
+        title: item.title || item.name,
+        summary: item.summary,
+        url: item.url,
+        source: 'Exploration'
+      };
+
+      const response = await fetch('/api/projects/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          role: 'assistant',
+          content: `Saved **${payload.title}** to Projects.`,
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error("Error saving to project:", error);
+    }
+  };
+
+  const handleArchiveExplorationItem = async (doc: any, archived: boolean) => {
+    if (!user || !doc.id) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/exploration/${doc.id}/archive?archived=${archived}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        // Update local state by toggling the isArchived flag
+        setExplorationItems(prev => prev.map(item =>
+          item.id === doc.id ? { ...item, isArchived: archived } : item
+        ));
+
+        // If we don't have isArchived in the API response yet, we trust the toggle.
+        // Also update explorationDocs implicitly via mapStateToProps logic (which we handle below in rendering)
+      }
+    } catch (error) {
+      console.error("Error archiving item:", error);
+    }
+  };
+
+  const handleDeleteExplorationItem = async (id: string) => {
+    if (!user) return;
+    if (!window.confirm("Are you sure you want to delete this specific article?")) return;
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`/api/exploration/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        setExplorationItems(prev => prev.filter(item => item.id !== id));
+      }
+    } catch (error) {
+      console.error("Error deleting exploration item:", error);
+    }
+  };
+
+  const handleManualAddExploration = async () => {
+    if (!user || (!addDocUrl && !addDocFile)) return;
+    setIsAddingDoc(true);
+
+    try {
+      const token = await user.getIdToken();
+      let response;
+
+      if (addDocMode === 'url') {
+        response = await fetch('/api/exploration/save', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            title: addDocTitle || 'New Resource',
+            url: addDocUrl,
+            summary: 'Added manually',
+            savedAt: new Date().toISOString()
+          })
+        });
+      } else {
+        const formData = new FormData();
+        formData.append('title', addDocTitle || (addDocFile ? addDocFile.name : 'Uploaded File'));
+        if (addDocFile) {
+          formData.append('file', addDocFile);
+        }
+
+        response = await fetch('/api/exploration/upload', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+      }
+
+      if (response.ok) {
+        // Refresh list
+        const res = await fetch('/api/exploration', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.items) setExplorationItems(data.items);
+
+        setIsAddDocModalOpen(false);
+        setAddDocUrl('');
+        setAddDocTitle('');
+        setAddDocFile(null);
+        setCurrentStatus('Item added successfully');
+        setTimeout(() => setCurrentStatus(''), 2000);
+      } else {
+        console.error("Failed to add item");
+        setCurrentStatus('Failed to add item');
+      }
+    } catch (error) {
+      console.error("Error adding item:", error);
+      setCurrentStatus('Error adding item');
+    } finally {
+      setIsAddingDoc(false);
+    }
+  };
+
+  const handleSendMessage = async (content: string, files: File[] = []) => {
+    if ((!content.trim() && files.length === 0) || !user) return;
 
     // Add current session to threads list if this is the first message
     if (!threads.find(t => t.id === sessionId)) {
-      setThreads(prev => [{ id: sessionId, title: content }, ...prev]);
+      setThreads(prev => [{ id: sessionId, title: content || (files.length > 0 ? `Files: ${files[0].name}...` : "New Research") }, ...prev]);
     }
+
+    // Convert files to base64 for transmission
+    const uploadedFiles = await Promise.all(files.map(async (file) => {
+      return new Promise<{ name: string, mime_type: string, data: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve({
+            name: file.name,
+            mime_type: file.type,
+            data: base64
+          });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }));
 
     const userMessage: Message = {
       id: uuidv4(),
       role: 'user',
-      content,
+      content: content,
       timestamp: new Date(),
+      files: files.map(f => ({
+        path: URL.createObjectURL(f),
+        type: f.name.endsWith('.pdf') ? 'pdf' : (f.type.includes('audio') ? 'mp3' : f.type.includes('video') ? 'mp4' : 'pptx'),
+        name: f.name
+      }))
     };
 
     setMessages(prev => [...prev, userMessage]);
+
+    // Auto-open the last uploaded PDF in the viewer
+    const pdfFiles = files.filter(f => f.type === 'application/pdf');
+    if (pdfFiles.length > 0) {
+      const newDocs = pdfFiles.map(f => ({
+        name: f.name,
+        url: URL.createObjectURL(f)
+      }));
+      setSessionDocuments(prev => [...prev, ...newDocs]);
+      setActiveDocument(newDocs[newDocs.length - 1]);
+    }
+
     setIsProcessing(true);
-    setCurrentStatus('Aletheia is initiating research protocol...');
+    setCurrentStatus(files.length > 0 ? 'Aletheia is analyzing your documents...' : 'Aletheia is initiating research protocol...');
 
     try {
       // Get the ID token from Firebase (user is guaranteed non-null by the earlier check)
@@ -158,8 +778,11 @@ const App: React.FC = () => {
         },
         body: JSON.stringify({
           query: content,
-          mode: mode,
           sessionId: sessionId,
+          files: uploadedFiles,
+          radarId: currentView === 'radar-chat' ? selectedRadar?.id : null,
+          activeDocumentUrl: (!isRadarChat && activeDocument) ? activeDocument.url : null,
+          agent_type: currentView === 'radar-chat' ? 'radar' : (currentView === 'projects' ? 'projects' : 'exploration')
         }),
       });
 
@@ -198,6 +821,7 @@ const App: React.FC = () => {
     }
   };
 
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-950">
@@ -206,61 +830,360 @@ const App: React.FC = () => {
     );
   }
 
-  return (
-    <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
-      {user ? (
-        <>
-          <Sidebar
-            isOpen={isSidebarOpen}
-            onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-            currentMode={mode}
-            onModeChange={setMode}
-            messages={messages}
-            userName={user.displayName}
-            userPhoto={user.photoURL}
-            onNewConversation={resetSession}
-            threads={threads}
-            onSelectThread={handleSelectThread}
-          />
-          <main className="flex-1 flex flex-col relative h-full">
-            <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-900/50 border border-zinc-800 rounded-full backdrop-blur-sm">
-                {user.photoURL && (
-                  <img src={user.photoURL} alt="Profile" className="w-6 h-6 rounded-full border border-zinc-700" />
-                )}
-                <span className="text-zinc-300 text-xs font-medium">{user.displayName}</span>
-              </div>
-              <button
-                onClick={handleSignOut}
-                className="px-4 py-1.5 bg-zinc-900 text-zinc-400 text-sm rounded-lg hover:text-white transition-colors border border-zinc-800"
-              >
-                Sign Out
-              </button>
-            </div>
-            <ChatArea
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              isProcessing={isProcessing}
-              currentStatus={currentStatus}
-            />
-          </main>
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-zinc-950 text-white p-4">
-          <div className="max-w-md text-center space-y-6">
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+  // Login View
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-full min-h-screen bg-[#0a0a14] text-white p-4 relative overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-[#0a0a14] to-[#0a0a14]"></div>
+
+        <div className="max-w-md text-center space-y-8 relative z-10">
+          <div className="space-y-4">
+            <p className="text-zinc-300 text-lg font-normal tracking-wide">
+              Live Research Intelligence System
+            </p>
+            <h1 className="text-6xl md:text-7xl font-medium italic bg-gradient-to-br from-blue-300 via-blue-500 to-blue-600 bg-clip-text text-transparent pb-2" style={{ fontFamily: "'Playfair Display', serif" }}>
               Aletheia
             </h1>
-            <p className="text-zinc-400 text-lg">
-              Unlock the future of multimedia research. Sign in to start your journey.
-            </p>
-            <div className="pt-4">
+          </div>
+          <div className="pt-4">
+            <button
+              onClick={handleGoogleSignIn}
+              className="px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 mx-auto"
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+              Sign in with Google
+            </button>
+          </div>
+          <p className="text-zinc-500 text-sm mt-8 font-normal tracking-wide opacity-80">
+            Limited spots available. No credit card required.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleDownloadDocument = (doc: { name: string, url: string }) => {
+    const link = document.createElement('a');
+    link.href = doc.url;
+    link.download = doc.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
+
+  // Dashboard View
+  if (currentView === 'dashboard') {
+    return (
+      <Dashboard
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={[]}
+        onNewConversation={resetSession}
+        threads={filteredThreads}
+        onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
+        documents={[]}
+        onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+    );
+  }
+
+
+  // Research Radar View
+  if (currentView === 'radar') {
+    return (
+      <ResearchRadar
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={[]}
+        onNewConversation={resetSession}
+        threads={filteredThreads}
+        onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
+        documents={[]}
+        onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
+        activeDocumentUrl={activeDocument?.url}
+        onSelectRadar={handleSelectRadar}
+      />
+    );
+  }
+
+  // Coming Soon Views (Projects)
+  if (currentView === 'projects') {
+    return (
+      <ComingSoon
+        title='Research Projects'
+        description="Aletheia can assist you working on research projects, from preparing for a presentation to writing a paper draft. The feature will come soon. Stay tuned."
+        onNavigate={(view: string) => setCurrentView(view as ViewState)}
+        userPhoto={user?.photoURL}
+        userName={user?.displayName}
+        onSignOut={handleSignOut}
+        isSidebarOpen={isSidebarOpen}
+        onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        onNewConversation={resetSession}
+        threads={filteredThreads}
+        onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
+        documents={sessionDocuments}
+        onSelectDocument={setActiveDocument}
+        onDeleteDocument={() => { }}
+        onDownloadDocument={handleDownloadDocument}
+        activeDocumentUrl={activeDocument?.url}
+      />
+    );
+  }
+
+
+
+
+  const handleSelectRadarAsset = async (doc: any) => {
+    let content = '';
+    let files: any[] = [];
+
+    if (doc.assetType === 'audio') {
+      // For audio podcasts, show a nice header, the text summary, AND the audio player
+      content = `## 🎧 ${doc.title}\n\n**Audio Podcast Summary**\n\n${doc.summary}\n\n---\n*Listen to the AI-generated podcast below:*`;
+      files = [{
+        path: doc.url,
+        type: 'mp3',
+        name: doc.name
+      }];
+    } else if (doc.assetType === 'markdown') {
+      // For markdown digests, try to fetch the full content if it's a URL
+      // Otherwise use the summary
+      if (doc.url && doc.url.startsWith('http')) {
+        try {
+          const response = await fetch(doc.url);
+          if (response.ok) {
+            const markdownContent = await response.text();
+            content = markdownContent;
+          } else {
+            content = `# ${doc.title}\n\n${doc.summary}`;
+          }
+        } catch (error) {
+          console.error('Error fetching markdown content:', error);
+          content = `# ${doc.title}\n\n${doc.summary}`;
+        }
+      } else {
+        // Use the summary as markdown content
+        content = `# ${doc.title}\n\n${doc.summary}`;
+      }
+    } else if (doc.assetType === 'pdf') {
+      // For papers, show abstract and provide the file in chat
+      content = `## 📄 ${doc.title}\n\n**Abstract:**\n\n${doc.summary}`;
+      files = [{
+        path: doc.url,
+        type: 'pdf',
+        name: doc.name
+      }];
+    } else {
+      // Default fallback
+      content = `### ${doc.title}\n\n${doc.summary}`;
+    }
+
+    const newMessage: Message = {
+      id: uuidv4(),
+      role: 'assistant',
+      content: content,
+      timestamp: new Date(),
+      files: files
+    };
+    setMessages(prev => [...prev, newMessage]);
+  };
+
+
+
+  const handleNavigate = async (view: string) => {
+    if (view === currentView) return;
+
+    // If leaving radar context to exploration, reset session to ensure independence
+    if (view === 'exploration' && (currentView === 'radar-chat' || selectedRadar)) {
+      // Don't try to find a thread from the current 'threads' list as it contains Radar threads.
+      // Just reset to a fresh session state. The useEffect will load the correct exploration threads.
+      resetSession();
+      setSelectedRadar(null);
+    }
+
+    // If entering specific other views, just switch
+    setCurrentView(view as ViewState);
+  };
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-zinc-950">
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        messages={messages}
+        userName={user.displayName}
+        userPhoto={user.photoURL}
+        onNewConversation={resetSession}
+        threads={filteredThreads}
+        onSelectThread={handleSelectThread}
+        onDeleteThread={handleDeleteThread}
+        documents={isRadarChat ? radarDocuments : [...explorationDocs, ...sessionDocuments]}
+        onSelectDocument={isRadarChat ? handleSelectRadarAsset : setActiveDocument}
+        onDeleteDocument={isRadarChat ? handleDeleteRadarItem : handleDeleteExplorationItem}
+        onDownloadDocument={handleDownloadDocument}
+        onArchiveDocument={!isRadarChat ? handleArchiveExplorationItem : undefined}
+        onSaveToProject={handleSaveToProject}
+        activeDocumentUrl={isRadarChat ? undefined : activeDocument?.url}
+        onAddDocument={() => setIsAddDocModalOpen(true)}
+      />
+      <main className="flex-1 flex overflow-hidden relative">
+        {!isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute bottom-4 left-4 z-50 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all shadow-lg animate-in slide-in-from-left duration-300"
+            title="Show Sidebar"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+        {isRadarChat && (
+          <div className="w-[540px] h-full flex flex-col border-r border-zinc-800 animate-in slide-in-from-left duration-500">
+            <RadarItemsList
+              items={radarItems}
+              isLoading={isRadarItemsLoading}
+              onRefresh={handleSyncRadar}
+              onDeleteItem={handleDeleteRadarItem}
+              onSaveToExploration={handleSaveToExploration}
+              onSaveToProject={handleSaveToProject}
+              outputMedia={selectedRadar?.outputMedia || 'Insight Digest'}
+              radarName={selectedRadar?.title}
+              onItemClick={(item) => {
+                // Find the corresponding mapped document
+                const doc = radarDocuments.find(d => d.id === item.id);
+                if (doc) {
+                  handleSelectRadarAsset(doc);
+                }
+              }}
+            />
+          </div>
+        )}
+        {!isRadarChat && activeDocument && (
+          <div className="flex-1 h-full flex flex-col min-w-0">
+            <DocumentViewer
+              url={activeDocument.url}
+              name={activeDocument.name}
+              onClose={() => setActiveDocument(null)}
+            />
+          </div>
+        )}
+        <div className={`flex flex-col relative h-full border-l border-zinc-800 transition-all duration-500 ease-in-out ${((!isRadarChat && activeDocument) || isRadarChat) ? 'flex-1 min-w-0' : 'w-full'}`}>
+          <div className="absolute top-4 right-4 z-50">
+            <NavBar
+              currentView={currentView}
+              onNavigate={handleNavigate}
+              userPhoto={user?.photoURL}
+              userName={user?.displayName}
+              onSignOut={handleSignOut}
+            />
+          </div>
+          <ChatArea
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            isProcessing={isProcessing}
+            currentStatus={currentStatus}
+            onFileClick={(file) => {
+              if (file.type === 'pdf' && !isRadarChat) {
+                setActiveDocument({
+                  url: file.path,
+                  name: file.name
+                });
+              }
+            }}
+            userPhoto={user?.photoURL}
+          />
+        </div>
+      </main>
+
+      {isAddDocModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 w-[400px] space-y-4 shadow-xl">
+            <h3 className="text-lg font-medium text-white">Add to Exploration</h3>
+
+            <div className="flex space-x-4 border-b border-zinc-800 pb-2">
               <button
-                onClick={handleGoogleSignIn}
-                className="px-8 py-3 bg-white text-black font-semibold rounded-full hover:bg-zinc-200 transition-all duration-300 transform hover:scale-105 flex items-center gap-2 mx-auto"
+                className={`pb-1 px-1 ${addDocMode === 'url' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-zinc-400'}`}
+                onClick={() => setAddDocMode('url')}
               >
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-                Sign in with Google
+                From URL
+              </button>
+              <button
+                className={`pb-1 px-1 ${addDocMode === 'upload' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-zinc-400'}`}
+                onClick={() => setAddDocMode('upload')}
+              >
+                Upload File
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-400 mb-1">Title (Optional)</label>
+                <input
+                  type="text"
+                  value={addDocTitle}
+                  onChange={e => setAddDocTitle(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Article Title"
+                />
+              </div>
+
+              {addDocMode === 'url' ? (
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">URL</label>
+                  <input
+                    type="text"
+                    value={addDocUrl}
+                    onChange={e => setAddDocUrl(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+                    placeholder="https://arxiv.org/pdf/..."
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">File</label>
+                  <input
+                    type="file"
+                    onChange={e => setAddDocFile(e.target.files ? e.target.files[0] : null)}
+                    className="w-full text-sm text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500/10 file:text-blue-400 hover:file:bg-blue-500/20"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                onClick={() => setIsAddDocModalOpen(false)}
+                className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleManualAddExploration}
+                disabled={isAddingDoc || (addDocMode === 'url' ? !addDocUrl : !addDocFile)}
+                className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAddingDoc ? 'Adding...' : 'Add Resource'}
               </button>
             </div>
           </div>

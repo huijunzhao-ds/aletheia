@@ -1,17 +1,18 @@
 
 # Aletheia | Multimedia Research Assistant
 
-A modern research interface separated into a React frontend and a Python backend (ADK-compatible). 
+Aletheia is an advanced, AI-powered multimedia research assistant designed to accelerate discovery and knowledge synthesis. Built with a modern React frontend and a Python backend adaptable to Google's Agent Development Kit (ADK), Aletheia employs a multi-agent orchestration pattern to help users not just search, but deeply explore topics. 
+
+Whether you are tracking emerging trends with automated **Research Radars**, deep-diving into academic papers with the **Exploration** interface, or generating multi-modal outputs like audio podcasts and briefings, Aletheia serves as your intelligent partner in navigating the world's information. 
 
 
 ## 1. Run the App Locally
 
 ## Prerequisites
 
-- **Python 3.10+** (managed via uv)
+- **Python 3.10+** (managed via [uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Node.js** (for frontend development)
 - **Google Gemini API Key** (set in `.env` as `GOOGLE_API_KEY`)
-- **uv**: [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ### Environment Setup
 
@@ -23,7 +24,7 @@ GOOGLE_API_KEY="your-google-gemini-api-key"
 
 ### Backend Setup
 
-The backend is built with FastAPI and Google's Agent Development Kit (ADK). It is managed using `uv`.
+The backend is built with FastAPI and Google's Agent Development Kit (ADK).
 
 ```bash
 # 1. Create virtual environment
@@ -38,9 +39,7 @@ uv pip install -r requirements.txt
 # 4. Run the server
 uvicorn main:app --reload --port 8000
 ```
-The backend will start at `http://localhost:8000`. It includes:
-- **Agent Endpoint**: `POST /api/research` handling the ReAct agent logic.
-- **Static Files**: Serves generated audio/video/slides from `/static` at `http://localhost:8000/static`.
+The backend will start at `http://localhost:8000`. 
 
 ### Frontend Setup
 
@@ -58,13 +57,25 @@ Open the URL shown in the terminal (usually `http://localhost:3000`) to interact
 
 ## 2. Deploy to Cloud Run
 
-Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Actions**. The latest version is deployed to `https://aletheia-356306.uc.r.appspot.com/`.
+Aletheia is configured for deployment to **Google Cloud Run** using **GitHub Actions**. The latest version is deployed to `https://aletheia-635800011324.us-central1.run.app/`.
 
 ### Google Cloud Setup
-1. **Enable APIs**: Create a new GCP Project and enable Cloud Run, Artifact Registry, and Cloud Build APIs. Can use CLI: `gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com`
-2. **Artifact Registry**: Create a Docker repository named `aletheia` in `us-central1`. Can use CLI: `gcloud artifacts repositories create aletheia --repository-format=docker --location=us-central1`
-3. **Service Account**: Create a Service Account with `Cloud Run Admin` and `Artifact Registry Writer` roles. Generate a JSON key. Can use CLI: `gcloud iam service-accounts create aletheia --display-name "Aletheia Service Account"`
-4. **Service Account Key**: Generate a JSON key for the Service Account. Can use CLI: `gcloud iam service-accounts keys create aletheia.json --iam-account aletheia@aletheia-356306.iam.gserviceaccount.com`    
+1. **Enable APIs**: Create a new GCP Project and enable Cloud Run, Artifact Registry, and Cloud Build APIs. Can use CLI
+```bash
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+```
+2. **Artifact Registry**: Create a Docker repository named `aletheia` in `us-central1`. Can use CLI
+```bash
+gcloud artifacts repositories create aletheia --repository-format=docker --location=us-central1
+```
+3. **Service Account**: Create a Service Account with `Cloud Run Admin` and `Artifact Registry Writer` roles. Generate a JSON key. Can use CLI
+```bash
+gcloud iam service-accounts create aletheia --display-name "Aletheia Service Account"
+```
+4. **Service Account Key**: Generate a JSON key for the Service Account. Can use CLI
+```bash
+gcloud iam service-accounts keys create aletheia.json --iam-account aletheia@aletheia-356306.iam.gserviceaccount.com
+```
 
 ### GitHub Secrets
 Add the following secrets to your GitHub repository (Settings > Secrets and variables > Actions):
@@ -119,12 +130,29 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
 
 ## 3. Architecture
 
-- **`main.py`**: FastAPI entry point. It wraps the `root_agent` from `app/agent.py`.
-- **`app/`**: Contains the ADK agent logic, tools, and multimodal generation code (merged from `deep-search`).
-- **`static/`**: Stores generated files (audio, video, slides).
-- **Frontend**: React + Vite + Tailwind CSS.
+Aletheia uses a **multi-agent orchestration** pattern powered by Google's Agent Development Kit (ADK) and Gemini 2.0.
 
-## 4. Development Notes and Contribution Guidelines
+- **`root_agent` (Router)**: The main entry point that analyzes user intent and routes tasks to specialists.
+- **Specialist Agents**:
+    - **`research_radar_specialist`**: Manages "Research Radars" (automated recurring research feeds) and handles questions about specific radars.
+    - **`exploration_specialist`**: Handles general queries and browsing. It has access to your "To Review" list (saved papers) to provide context-aware answers.
+    - **`search_specialist`**: Performs deep multi-step web and academic research using Google Search and Arxiv.
+    - **`project_specialist`** *(WIP)*: Manages long-term research projects and artifacts.
+- **Multimedia Generation**: Dedicated tools for generating audio podcasts, markdown reports, and (future) video/slides.
+- **Frontend**: React + Vite + Tailwind CSS with a responsive Sidebar UI.
+
+## 4. Key Features & UI Guide
+
+- **Dashboard**: High-level overview of your research activities.
+- **Research Radar**: Create automated agents that monitor specific topics (e.g., "GenAI Trends") daily/weekly and generate digests.
+- **Exploration**: A chat-first interface for deep-diving into topics.
+    - **To Review**: Articles and papers you've saved for later reading. The AI has direct access to these.
+    - **Outputs**: Generated assets like Audio Podcasts, Markdown Reports, and PDFs.
+    - **Reviewed**: Archive of papers you've finished reading.
+    - **My Chats**: History of your research conversations.
+- **Projects** *(Coming Soon)*: Organize your research into structured collections.
+
+## 5. Development Notes and Contribution Guidelines
 
 - **Multimedia**: The application uses `ffmpeg` for video generation. The provided `Dockerfile` automates this installation.
 - **Frontend/Backend Integration**: In production, the FastAPI server serves the React frontend from the `dist` directory. Running `npm run build` locally is recommended before building the Docker image.
@@ -135,15 +163,19 @@ gcloud run deploy aletheia --source . --region us-central1 --set-env-vars GOOGLE
     - Commit your changes and push to your branch
     - Merge into `feature/cloud_deploy` first and GitHub Actions will deploy to Cloud Run automatically. If it works as expected, create a pull request and merge into `main`.
 
-## 5. TO-DOs
+## 6. TO-DOs
 
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
-- [ ] Update UI/UX (WIP)
-- [ ] Test and improve chat features (WIP)
-- [ ] Test and improve audio features
-- [ ] Test and improve presentation features
-- [ ] Test and improve video features
+- [x] Implement radar features
+- [x] Implement exploration features
+- [ ] Implement projects features (WIP)
+- [ ] Add a user help agent
+- [ ] Add presentation features
+- [ ] Add video features
+- [ ] Add personal knowledge and information sources
 - [ ] Add memory management and personalization
+- [ ] Add social and share features
+
 
 

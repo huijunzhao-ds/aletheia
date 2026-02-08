@@ -1,66 +1,150 @@
-
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Message, GeneratedFile } from '../types';
 
 interface MessageItemProps {
   message: Message;
+  onFileClick?: (file: GeneratedFile) => void;
+  userPhoto?: string | null;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({ message, onFileClick, userPhoto }) => {
   const isAssistant = message.role === 'assistant';
+  const isSystem = message.role === 'system';
+  const isTool = message.role === 'tool';
+  const isUser = message.role === 'user';
 
-  // Helper to format citations as badges
-  const renderContentWithCitations = (text: string) => {
-    const parts = text.split(/(\[\d+\])/g);
-    return parts.map((part, i) => {
-      if (part.match(/\[\d+\]/)) {
-        return (
-          <span 
-            key={i} 
-            className="inline-flex items-center justify-center px-1.5 py-0.5 mx-0.5 text-[10px] font-bold text-indigo-400 bg-indigo-400/10 border border-indigo-400/20 rounded cursor-pointer hover:bg-indigo-400/20 transition-colors"
-          >
-            {part.replace(/[\[\]]/g, '')}
-          </span>
-        );
-      }
-      return part;
-    });
-  };
+  if (isSystem || isTool) {
+    return (
+      <div className="flex items-start w-full mb-6 px-4 animate-in fade-in slide-in-from-left-2 duration-300">
+        <div className="mr-3 mt-1 flex-shrink-0">
+          <div className="w-6 h-6 rounded-md bg-zinc-800/50 flex items-center justify-center border border-zinc-700/50">
+            {isSystem ? (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 pb-2 border-l-2 border-zinc-800/30 pl-4">
+          <div className="text-[10px] uppercase tracking-widest text-zinc-600 font-bold mb-1">
+            {isSystem ? 'System Logic' : 'Agent Action'}
+          </div>
+          <div className="text-sm text-zinc-500 leading-relaxed font-mono opacity-80 line-clamp-6 hover:line-clamp-none transition-all cursor-pointer">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
-      <div className={`flex items-start max-w-[85%] space-x-4 ${!isAssistant && 'flex-row-reverse space-x-reverse'}`}>
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${
-          isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
-        }`}>
+    <div className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'} animate-in fade-in slide-in-from-bottom-4 duration-500 w-full mb-6`}>
+      <div className={`flex items-start max-w-[90%] md:max-w-[85%] space-x-4 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
+        {/* Avatar */}
+        <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-110 overflow-hidden ${isAssistant ? 'bg-indigo-600 text-white' : 'bg-zinc-700 text-zinc-200'
+          }`}>
           {isAssistant ? (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
             </svg>
           ) : (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+            userPhoto ? (
+              <img src={userPhoto} alt="User" className="w-full h-full object-cover" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            )
           )}
         </div>
 
-        <div className={`space-y-4 ${!isAssistant && 'text-right'}`}>
-          <div className={`px-5 py-3 rounded-2xl shadow-sm leading-relaxed text-sm md:text-base border ${
-            isAssistant 
-              ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none' 
-              : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
-          }`}>
-            {isAssistant ? renderContentWithCitations(message.content) : message.content}
+        {/* Message Content Container */}
+        <div className={`space-y-4 overflow-hidden flex-1 flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+          <div className={`px-5 py-4 rounded-2xl shadow-sm leading-relaxed text-[15px] border w-full ${isAssistant
+            ? 'bg-zinc-900 border-zinc-800 text-zinc-200 rounded-tl-none'
+            : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
+            }`}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code({ node, inline, className, children, ...props }: any) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <div className="rounded-lg overflow-hidden my-4 border border-zinc-800 shadow-xl text-left">
+                      <div className="bg-zinc-800 px-4 py-1.5 flex justify-between items-center text-[10px] font-mono text-zinc-400">
+                        <span>{match[1].toUpperCase()}</span>
+                        <div className="flex space-x-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                          <div className="w-2.5 h-2.5 rounded-full bg-zinc-700"></div>
+                        </div>
+                      </div>
+                      <SyntaxHighlighter
+                        style={vscDarkPlus}
+                        language={match[1]}
+                        PreTag="div"
+                        className="!m-0 !bg-zinc-950 !p-4 !text-sm scrollbar-thin scrollbar-thumb-zinc-800"
+                        {...props}
+                      >
+                        {String(children).replace(/\n$/, '')}
+                      </SyntaxHighlighter>
+                    </div>
+                  ) : (
+                    <code className={`px-1.5 py-0.5 rounded font-mono text-sm ${isAssistant ? 'bg-zinc-800 text-indigo-300' : 'bg-indigo-500 text-white'}`} {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+                p: ({ children }) => <p className="mb-3 last:mb-0 text-left">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc ml-5 mb-3 space-y-1 text-left">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal ml-5 mb-3 space-y-1 text-left">{children}</ol>,
+                li: ({ children }) => <li className="pl-1 text-left">{children}</li>,
+                h1: ({ children }) => <h1 className="text-xl font-bold mb-4 mt-2 text-white border-b border-zinc-800 pb-2 text-left">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-lg font-bold mb-3 mt-4 text-zinc-100 text-left">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-base font-bold mb-2 mt-3 text-zinc-200 text-left">{children}</h3>,
+                blockquote: ({ children }) => (
+                  <blockquote className="border-l-4 border-indigo-500 pl-4 py-1 italic bg-indigo-500/5 rounded-r my-4 text-left">
+                    {children}
+                  </blockquote>
+                ),
+                table: ({ children }) => (
+                  <div className="overflow-x-auto my-4 shadow-lg rounded-lg border border-zinc-800 text-left">
+                    <table className="min-w-full divide-y divide-zinc-800">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                thead: ({ children }) => <thead className="bg-zinc-800/50 text-left">{children}</thead>,
+                th: ({ children }) => <th className="px-4 py-2 text-left text-xs font-bold text-zinc-400 uppercase tracking-wider border-r border-zinc-800 last:border-0">{children}</th>,
+                td: ({ children }) => <td className="px-4 py-2 text-sm border-r border-zinc-800 last:border-0 text-left">{children}</td>,
+                tr: ({ children }) => <tr className="divide-x divide-zinc-800 border-b border-zinc-800 last:border-0 hover:bg-zinc-800/30 transition-colors">{children}</tr>,
+                a: ({ node, ...props }) => <a className="text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-400/50" target="_blank" rel="noopener noreferrer" {...props} />
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
 
-          {isAssistant && message.files && message.files.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 mt-4 w-full">
+          {/* Message Files */}
+          {message.files && message.files.length > 0 && (
+            <div className={`grid grid-cols-1 gap-4 mt-4 w-full max-w-xl ${!isAssistant ? 'ml-auto' : ''}`}>
               {message.files.map((file, idx) => (
-                <MediaRenderer key={idx} file={file} />
+                <MediaRenderer key={idx} file={file} onFileClick={onFileClick} isAssistant={isAssistant} />
               ))}
             </div>
           )}
-          
+
+          {/* Timestamp */}
           <div className="text-[10px] text-zinc-600 font-medium uppercase tracking-tight px-1">
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
@@ -70,25 +154,148 @@ export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
   );
 };
 
-const MediaRenderer: React.FC<{ file: GeneratedFile }> = ({ file }) => {
-  switch (file.type) {
-    case 'mp3':
-      return (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3 shadow-md animate-in zoom-in-95 duration-300">
-          <div className="flex items-center space-x-3 mb-1">
-            <div className="p-2 bg-indigo-500/20 rounded-lg">
-              <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-              </svg>
-            </div>
-            <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">{file.name}</span>
-          </div>
-          <audio controls className="w-full h-10 accent-indigo-500">
-            <source src={file.path} type="audio/mpeg" />
-            Your browser does not support the audio element.
-          </audio>
+const AudioPlayer: React.FC<{
+  file: GeneratedFile,
+  isAssistant: boolean
+}> = ({ file, isAssistant }) => {
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '0:00';
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 shadow-md animate-in zoom-in-95 duration-300">
+      <div className="flex items-center space-x-3 mb-4">
+        <div className="p-2.5 bg-indigo-500/20 rounded-lg">
+          <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+          </svg>
         </div>
+        <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex-1 truncate">{file.name}</span>
+      </div>
+
+      <audio
+        ref={audioRef}
+        src={file.path}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={() => setIsPlaying(false)}
+      />
+
+      <div className="space-y-3">
+        {/* Timeline */}
+        <div className="relative">
+          <input
+            type="range"
+            min="0"
+            max={duration || 0}
+            value={currentTime}
+            onChange={handleSeek}
+            className="w-full h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400"
+            style={{
+              background: `linear-gradient(to right, rgb(99 102 241) 0%, rgb(99 102 241) ${(currentTime / duration) * 100}%, rgb(39 39 42) ${(currentTime / duration) * 100}%, rgb(39 39 42) 100%)`
+            }}
+          />
+        </div>
+
+        {/* Controls */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={togglePlay}
+            className="p-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-full transition-all shadow-lg hover:shadow-indigo-500/20"
+          >
+            {isPlaying ? (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+
+          <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono">
+            <span>{formatTime(currentTime)}</span>
+            <span>/</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MediaRenderer: React.FC<{
+  file: GeneratedFile,
+  onFileClick?: (file: GeneratedFile) => void,
+  isAssistant: boolean
+}> = ({ file, onFileClick, isAssistant }) => {
+  switch (file.type) {
+    case 'pdf':
+      return (
+        <button
+          onClick={() => onFileClick?.(file)}
+          className={`group flex items-center p-4 bg-zinc-900 border rounded-xl transition-all shadow-md animate-in zoom-in-95 duration-300 w-full text-left ${isAssistant ? 'border-zinc-800 hover:border-indigo-500' : 'border-indigo-500/30 hover:bg-zinc-800'
+            }`}
+        >
+          <div className="p-3 bg-red-500/10 group-hover:bg-red-500/20 rounded-lg transition-colors mr-4">
+            <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-zinc-200 group-hover:text-indigo-400 transition-colors truncate">{file.name}</div>
+            <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">PDF Document • Click to View</div>
+          </div>
+          <div className="p-2 text-zinc-500 group-hover:text-indigo-400 transition-colors">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+          </div>
+        </button>
       );
+    case 'mp3':
+      return <AudioPlayer file={file} isAssistant={isAssistant} />;
     case 'mp4':
       return (
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-md animate-in zoom-in-95 duration-300">
@@ -108,9 +315,9 @@ const MediaRenderer: React.FC<{ file: GeneratedFile }> = ({ file }) => {
       );
     case 'pptx':
       return (
-        <a 
-          href={file.path} 
-          download 
+        <a
+          href={file.path}
+          download
           className="group flex items-center p-4 bg-zinc-900 border border-zinc-800 hover:border-indigo-500 rounded-xl transition-all shadow-md animate-in zoom-in-95 duration-300"
         >
           <div className="p-3 bg-amber-500/20 group-hover:bg-amber-500/30 rounded-lg transition-colors mr-4">

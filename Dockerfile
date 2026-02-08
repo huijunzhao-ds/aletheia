@@ -10,6 +10,7 @@ ARG VITE_FIREBASE_PROJECT_ID
 ARG VITE_FIREBASE_STORAGE_BUCKET
 ARG VITE_FIREBASE_MESSAGING_SENDER_ID
 ARG VITE_FIREBASE_APP_ID
+ARG FIREBASE_DATABASE_ID
 
 ENV VITE_FIREBASE_API_KEY=$VITE_FIREBASE_API_KEY
 ENV VITE_FIREBASE_AUTH_DOMAIN=$VITE_FIREBASE_AUTH_DOMAIN
@@ -17,6 +18,7 @@ ENV VITE_FIREBASE_PROJECT_ID=$VITE_FIREBASE_PROJECT_ID
 ENV VITE_FIREBASE_STORAGE_BUCKET=$VITE_FIREBASE_STORAGE_BUCKET
 ENV VITE_FIREBASE_MESSAGING_SENDER_ID=$VITE_FIREBASE_MESSAGING_SENDER_ID
 ENV VITE_FIREBASE_APP_ID=$VITE_FIREBASE_APP_ID
+ENV FIREBASE_DATABASE_ID=$FIREBASE_DATABASE_ID
 
 RUN npm run build
 
@@ -35,14 +37,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the built frontend from Stage 1
-COPY --from=frontend-builder /app/dist ./dist
-
 # Copy the rest of the application code
 COPY . .
 
+# Copy the built frontend from Stage 1 (ensure it overwrites any local dist if present)
+COPY --from=frontend-builder /app/dist ./dist
+
 # Ensure the static directory exists for generated files
-RUN mkdir -p static/audio static/videos static/slides
+RUN mkdir -p static/audio static/videos static/slides static/docs
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
