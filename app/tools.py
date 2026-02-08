@@ -446,6 +446,7 @@ def read_local_file(file_path: str) -> str:
     """
     Reads the text content of a local file saved in the system (e.g., from 'static/docs/').
     Supports PDF and text/markdown files.
+    If the file is missing locally but exists in GCS backup, it will be restored.
     
     Args:
         file_path: The name or path of the file to read (e.g., 'static/docs/paper.pdf' or just 'paper.pdf').
@@ -461,8 +462,30 @@ def read_local_file(file_path: str) -> str:
         else:
             target_path = os.path.join("static/docs", os.path.basename(file_path))
             
+        # LAZY RESTORE FROM GCS if missing
         if not os.path.exists(target_path):
-            return f"Error: File not found at {target_path}"
+            try:
+                # Try to restore from GCS (Cloud Run ephemeral storage fix)
+                from app.storage import get_storage_client, BUCKET_NAME
+                client = get_storage_client()
+                if client:
+                    bucket = client.bucket(BUCKET_NAME)
+                    filename = os.path.basename(target_path)
+                    blob_name = f"docs/{filename}"
+                    blob = bucket.blob(blob_name)
+                    
+                    if blob.exists():
+                        logger.info(f"Restoring missing file from GCS: {blob_name}")
+                        # Ensure dir exists
+                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                        blob.download_to_filename(target_path)
+                    else:
+                        logger.warning(f"File not found locally or in GCS: {blob_name}")
+            except Exception as e:
+                logger.warning(f"Failed to restore from GCS: {e}")
+
+        if not os.path.exists(target_path):
+            return f"Error: File not found at {target_path} (and restore failed)"
             
         # Security check: ensure path is within static/docs
         abs_target = os.path.abspath(target_path)

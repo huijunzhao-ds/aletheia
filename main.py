@@ -146,6 +146,36 @@ async def startup_event():
     
     logger.info("APScheduler started: Proactive sync scheduled hourly at minute 0 and initial check triggered.")
 
+from fastapi.responses import FileResponse
+
+@app.get("/static/docs/{filename}")
+async def serve_doc(filename: str):
+    """
+    Intercepts static doc requests to lazily restore them from GCS if missing from local ephemeral disk.
+    """
+    local_path = os.path.join(DOCS_DIR, filename)
+    
+    if not os.path.exists(local_path):
+        # Lazy Restore from GCS
+        try:
+            from app.storage import get_storage_client, BUCKET_NAME
+            client = get_storage_client()
+            if client:
+                bucket = client.bucket(BUCKET_NAME)
+                blob_name = f"docs/{filename}"
+                blob = bucket.blob(blob_name)
+                
+                if blob.exists():
+                    logger.info(f"Restoring requested doc from GCS: {blob_name}")
+                    blob.download_to_filename(local_path)
+        except Exception as e:
+            logger.error(f"Failed to restore {filename} for serving: {e}")
+
+    if os.path.exists(local_path):
+        return FileResponse(local_path)
+    
+    raise HTTPException(status_code=404, detail="File not found")
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # CORS Middleware setup
@@ -790,6 +820,7 @@ async def delete_radar_item(radar_id: str, item_id: str, user_id: str = Depends(
 @app.post("/api/exploration/save")
 async def save_to_exploration(item: dict, user_id: str = Depends(get_current_user)):
     from app.db import user_data_service
+    from app.storage import upload_to_gcs
     import httpx
     try:
         # Check if we have a URL to download
@@ -815,7 +846,16 @@ async def save_to_exploration(item: dict, user_id: str = Depends(get_current_use
                         filename = f"expl_{uuid.uuid4().hex[:8]}_{safe_title}.{ext}"
                         local_path = os.path.join(STATIC_DIR, "docs", filename)
                         
-                        # Write to file
+                        # 1. Attempt GCS Upload (Persistence)
+                        try:
+                            gcs_uri = upload_to_gcs(resp.content, f"docs/{filename}", content_type=ct if ct else "application/pdf")
+                            if gcs_uri:
+                                item["gcsUri"] = gcs_uri
+                                logger.info(f"Persisted to GCS: {gcs_uri}")
+                        except Exception as gcs_err:
+                            logger.error(f"GCS Upload failed (continuing with local only): {gcs_err}")
+
+                        # 2. Save locally (Performance/Cache)
                         mode = "wb"
                         with open(local_path, mode) as f:
                             f.write(resp.content)

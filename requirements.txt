@@ -18,3 +18,4 @@ httpx
 pyjwt[crypto]
 apscheduler
 pypdf
+google-cloud-storage
