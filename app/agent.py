@@ -1,10 +1,9 @@
-# ruff: noqa
 import os
 import logging
 from google.adk.agents import Agent
 from google.adk.apps.app import App
 from google.adk.models import Gemini
-from app.tools import (
+from app.services import (
     web_search, 
     search_arxiv, 
     scrape_website,
@@ -13,7 +12,6 @@ from app.tools import (
     generate_video_lecture_file,
     list_radars,
     get_radar_details,
-    save_radar_item,
     save_radar_item,
     list_exploration_items,
     read_local_file
@@ -159,3 +157,31 @@ root_agent = Agent(
 )
 
 app = App(root_agent=root_agent, name="Aletheia")
+
+# Pre-configured App Instances
+# We export these so they are reused across requests (Singleton pattern)
+radar_app = App(root_agent=research_radar_agent, name="aletheia_radar")
+exploration_app = App(root_agent=exploration_agent, name="aletheia_exploration")
+projects_app = App(root_agent=project_agent, name="aletheia_projects")
+
+# Helper function to resolve agent context (app name and App instance)
+def get_agent_context(agent_type: str = None) -> tuple[str, App]:
+    """
+    Resolves the target application name and App instance for a given agent type.
+    
+    Args:
+        agent_type: The type of agent requested (e.g., 'radar', 'exploration').
+    
+    Returns:
+        tuple[str, App]: A tuple containing (app_name, app_instance).
+    """
+    target_app = app # Default to main app
+    
+    if agent_type == 'radar':
+        target_app = radar_app
+    elif agent_type == 'exploration':
+        target_app = exploration_app
+    elif agent_type == 'projects':
+        target_app = projects_app
+        
+    return target_app.name, target_app

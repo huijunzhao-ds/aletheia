@@ -1,14 +1,11 @@
 google-adk>=1.15.0
-opentelemetry-instrumentation-google-genai
-gcsfs
-google-cloud-logging
 google-cloud-aiplatform[evaluation,agent-engines]
 protobuf
 arxiv
-chromadb
 gtts
 python-pptx
 moviepy
+Pillow
 fastapi
 uvicorn
 python-dotenv

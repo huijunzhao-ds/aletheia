@@ -15,7 +15,7 @@ class UserDataService:
             database_id = os.getenv("FIREBASE_DATABASE_ID", "(default)")
             project_id = os.getenv("VITE_FIREBASE_PROJECT_ID")
             
-            key_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "gcp-sa-key.json")
+            key_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "gcp-sa-key.json")
             if os.path.exists(key_path):
                 self.db = firestore.AsyncClient.from_service_account_json(key_path, database=database_id)
                 logger.info(f"Initialized Firestore Client using {key_path}")
@@ -92,7 +92,6 @@ class UserDataService:
             
         return await self.get_radar_collection(user_id).document(radar_id).update(update_data)
 
-
     async def update_radar_status(self, user_id: str, radar_id: str, status: str):
         return await self.get_radar_collection(user_id).document(radar_id).update({
             "status": status
@@ -102,9 +101,6 @@ class UserDataService:
         return await self.get_radar_collection(user_id).document(radar_id).update({
             "lastViewed": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
         })
-
-    async def reset_radar_unread(self, user_id: str, radar_id: str):
-        pass # unreadCount is deprecated
 
     def get_radar_items_collection(self, user_id: str, radar_id: str):
         return self.get_radar_collection(user_id).document(radar_id).collection("captured_items")
@@ -135,6 +131,22 @@ class UserDataService:
         doc_ref = self.get_radar_items_collection(user_id, radar_id).document(item_id)
         await doc_ref.delete()
         return True
+
+    async def get_all_radar_captured_keys(self, user_id: str, radar_id: str):
+        """
+        Efficiently retrieves only source_url and title of all captured items for deduplication.
+        Returns a list of dicts with 'source_url' and 'title'.
+        """
+        # Select only necessary fields to reduce cost/bandwidth
+        docs = self.get_radar_items_collection(user_id, radar_id).select(["source_url", "title"]).stream()
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            results.append({
+                "source_url": d.get("source_url"), 
+                "title": d.get("title")
+            })
+        return results
 
     # --- Exploration ---
     def get_exploration_collection(self, user_id: str):

@@ -1,5 +1,15 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+import uuid
+
+class Feedback(BaseModel):
+    """Represents feedback for a conversation."""
+    score: int | float
+    text: str | None = ""
+    log_type: Literal["feedback"] = "feedback"
+    service_name: Literal["deep-search"] = "deep-search"
+    user_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
 class ArxivConfig(BaseModel):
     categories: List[str] = []
@@ -17,12 +27,21 @@ class RadarCreate(BaseModel):
     customPrompt: Optional[str] = ""
     arxivConfig: Optional[ArxivConfig] = None
 
-class RadarItemResponse(RadarCreate):
+class Radar(RadarCreate):
     id: str
     lastUpdated: str
     status: str
-
     latest_summary: Optional[str] = None
+
+class RadarUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    sources: Optional[List[str]] = None
+    frequency: Optional[str] = None
+    outputMedia: Optional[str] = None
+    customPrompt: Optional[str] = None
+    status: Optional[str] = None
+    arxivConfig: Optional[ArxivConfig] = None
 
 class ResearchRequest(BaseModel):
     query: str
