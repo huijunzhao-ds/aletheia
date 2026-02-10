@@ -139,6 +139,17 @@ async def delete_radar(radar_id: str, user_id: str = Depends(get_current_user)):
         logger.error(f"Error deleting radar: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/{radar_id}/read")
+async def mark_radar_read(radar_id: str, user_id: str = Depends(get_current_user)):
+    """Marks the radar as read/viewed by updating the lastViewed timestamp."""
+    try:
+        await user_data_service.track_radar_viewed(user_id, radar_id)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error marking radar {radar_id} read: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{radar_id}/status")
 async def update_radar_status(radar_id: str, status: str, user_id: str = Depends(get_current_user)):
     if status not in ["active", "paused"]:

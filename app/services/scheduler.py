@@ -140,7 +140,7 @@ async def _run_briefing_session(user_id: str, radar_id: str, radar_title: str, q
     """Runs the agent session to process the briefing prompt."""
     job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
     target_sync_app_name = "aletheia_radar"
-    from app.agent import root_agent
+    from app.agent import research_radar_agent
 
     
     # Add descriptive title for data auditing
@@ -157,7 +157,7 @@ async def _run_briefing_session(user_id: str, radar_id: str, radar_title: str, q
         }
     )
     
-    scoped_sync_app = App(root_agent=root_agent, name=target_sync_app_name)
+    scoped_sync_app = App(root_agent=research_radar_agent, name=target_sync_app_name)
     runner = Runner(app=scoped_sync_app, session_service=session_service)
     content = types.Content(parts=[types.Part(text=query)])
     
@@ -256,8 +256,8 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
     # Use a temporary session for ranking
     # We use a unique ID to avoid collision
     temp_session_id = f"rank_{uuid.uuid4().hex[:8]}"
-    from app.agent import root_agent
-    rank_app = App(root_agent=root_agent, name="aletheia_ranker")
+    from app.agent import research_radar_agent
+    rank_app = App(root_agent=research_radar_agent, name="aletheia_ranker")
     
     try:
         # Create session

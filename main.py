@@ -8,9 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-
+from app.core.config import STATIC_DIR, DOCS_DIR, BUCKET_NAME
+from app.api import research, threads, session, radars, exploration, projects, user
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,15 +20,6 @@ load_dotenv()
 
 # Ensure the current directory is in sys.path to allow imports from 'app'
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Import core config
-from app.core.config import STATIC_DIR, DOCS_DIR, BUCKET_NAME
-
-# Import Routers
-from app.api import research, threads, session, radars, exploration, projects, user
-
-# Global Scheduler for proactive features
-# scheduler = AsyncIOScheduler()
 
 app = FastAPI()
 

@@ -6,7 +6,6 @@ import re
 import arxiv
 from typing import List, Dict, Optional
 
-
 logger = logging.getLogger(__name__)
 
 def web_search(query: str) -> str:
