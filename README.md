@@ -63,7 +63,7 @@ Aletheia is configured for deployment to **Google Cloud Run** and **Firebase** u
 
 The latest prod version is deployed to `https://aletheia-635800011324.us-central1.run.app/`, with the code in main branch.
 
-For QA version, the latest version is deployed to `https://aletheia-qa-635800011324.us-central1.run.app/`, with the code in develop branch.
+The latest QA version is deployed to `https://aletheia-qa-635800011324.us-central1.run.app/`, with the code in develop branch.
 
 
 ## 3. Architecture
