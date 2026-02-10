@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 try:
     firebase_admin.get_app()
 except ValueError:
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("VITE_FIREBASE_PROJECT_ID")
+    project_id = os.getenv("FIREBASE_PROJECT_ID") or os.getenv("VITE_FIREBASE_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
     if project_id:
         firebase_admin.initialize_app(options={'projectId': project_id})
     else:

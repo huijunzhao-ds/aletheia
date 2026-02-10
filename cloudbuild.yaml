@@ -18,12 +18,12 @@ steps:
       - '--build-arg'
       - 'FIREBASE_DATABASE_ID=${_FIREBASE_DATABASE_ID}'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/aletheia'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
       - '.'
 
   # 2. Push the image to Artifact Registry / GCR
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/aletheia']
+    args: ['push', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}']
 
   # 3. Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -31,23 +31,29 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'aletheia'
+      - '${_SERVICE_NAME}'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/aletheia'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
       - '--region'
-      - 'us-central1'
+      - '${_REGION}'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      # We pass the Database ID to the runtime environment as well
+      # Pass the Database ID and Storage Bucket to the runtime environment
       - '--set-env-vars'
       - 'FIREBASE_DATABASE_ID=${_FIREBASE_DATABASE_ID}'
+      - '--set-env-vars'
+      - 'VITE_FIREBASE_STORAGE_BUCKET=${_VITE_FIREBASE_STORAGE_BUCKET}'
+      - '--set-env-vars'
+      - 'GCS_BUCKET_NAME=${_VITE_FIREBASE_STORAGE_BUCKET}'
 
 images:
-  - 'gcr.io/$PROJECT_ID/aletheia'
+  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}'
 
 substitutions:
-  _FIREBASE_DATABASE_ID: '(default)'
+  _SERVICE_NAME: 'aletheia-qa' # Default to qa if not specified
+  _REGION: 'us-central1'
+  _FIREBASE_DATABASE_ID: 'qa-research-db'
   _VITE_FIREBASE_API_KEY: ''
   _VITE_FIREBASE_AUTH_DOMAIN: ''
   _VITE_FIREBASE_PROJECT_ID: ''
