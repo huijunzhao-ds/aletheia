@@ -3,11 +3,11 @@ import React from 'react';
 interface CapturedItem {
     id: string;
     title: string;
-    summary: string;
+    summary?: string;
     url?: string;
-    authors: string[];
-    timestamp: string;
-    type: string;
+    authors?: string[];
+    timestamp?: string; // Also make timestamp optional as useRadars has it optional?
+    type?: string;
     tags?: string[];
 }
 
