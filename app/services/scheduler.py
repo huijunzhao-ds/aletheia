@@ -82,13 +82,13 @@ async def _calculate_time_window(radar_data: dict, radar_id: str) -> tuple[datet
             
     return cutoff_time, max_search
 
-async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list) -> list:
+async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list, since: datetime.datetime = None) -> list:
     """Filters out papers that have already been captured for this radar."""
     if not papers:
         return []
 
     # Fetch existing captured keys to filter out duplicates
-    existing_keys = await user_data_service.get_all_radar_captured_keys(user_id, radar_id)
+    existing_keys = await user_data_service.get_all_radar_captured_keys(user_id, radar_id, since=since)
     existing_urls = {k.get("url") for k in existing_keys if k.get("url")}
     existing_titles = {k.get("title", "").lower().strip() for k in existing_keys if k.get("title")}
     
@@ -189,7 +189,7 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         real_papers = search_arxiv(query=search_query, max_results=max_search, published_after=cutoff_time)
         
         # 2. Deduplication
-        real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers)
+        real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers, since=cutoff_time)
 
         if real_papers:
             # 3. Semantic Ranking - TODO: to look at inference time

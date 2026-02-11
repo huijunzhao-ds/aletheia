@@ -132,14 +132,19 @@ class UserDataService:
         await doc_ref.delete()
         return True
 
-    async def get_all_radar_captured_keys(self, user_id: str, radar_id: str):
+    async def get_all_radar_captured_keys(self, user_id: str, radar_id: str, since: datetime.datetime = None):
         """
-        Efficiently retrieves only source_url and title of all captured items for deduplication.
-        Returns a list of dicts with 'source_url' and 'title'.
+        Efficiently retrieves only url and title of captured items for deduplication.
+        Optionally filters by timestamp 'since' for optimization.
         """
         # Select only necessary fields to reduce cost/bandwidth
-        # Select only necessary fields to reduce cost/bandwidth
-        docs = self.get_radar_items_collection(user_id, radar_id).select(["url", "title"]).stream()
+        query = self.get_radar_items_collection(user_id, radar_id)
+        
+        if since:
+             # Ensure since is timezone aware if needed, firestore handles it
+             query = query.where(filter=firestore.FieldFilter("timestamp", ">=", since))
+             
+        docs = query.select(["url", "title"]).stream()
         results = []
         async for doc in docs:
             d = doc.to_dict()
