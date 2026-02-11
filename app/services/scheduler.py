@@ -27,18 +27,11 @@ def _build_arxiv_query(radar_data: dict) -> str:
     # 2. Keywords
     keywords = arxiv_config.get('keywords')
     if isinstance(keywords, list):
-        # We want any of the keywords to appear in EITHER title OR abstract
-        kw_terms = []
-        for k in keywords:
-            clean_k = k.strip()
-            if clean_k:
-                kw_terms.append(f"ti:{clean_k}")
-                kw_terms.append(f"abs:{clean_k}")
-        
-        if kw_terms:
+        kw_groups = [f"(ti:{k.strip()} OR abs:{k.strip()})" for k in keywords if k.strip()]
+        if kw_groups:
             logic = arxiv_config.get('keywordLogic', 'OR').upper()
             join_op = " AND " if logic == "AND" else " OR "
-            kw_part = join_op.join(kw_terms)
+            kw_part = join_op.join(kw_groups)
             terms.append(f"({kw_part})")
             
     if terms:
@@ -96,7 +89,7 @@ async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list) ->
 
     # Fetch existing captured keys to filter out duplicates
     existing_keys = await user_data_service.get_all_radar_captured_keys(user_id, radar_id)
-    existing_urls = {k.get("source_url") for k in existing_keys if k.get("source_url")}
+    existing_urls = {k.get("url") for k in existing_keys if k.get("url")}
     existing_titles = {k.get("title", "").lower().strip() for k in existing_keys if k.get("title")}
     
     unique_papers = []
@@ -126,7 +119,7 @@ def _construct_briefing_prompt(radar_data: dict, radar_id: str, papers: list) ->
         query += f"I have found {len(papers)} new papers from Arxiv:\n"
         query += json.dumps(papers, indent=2)
         query += f"\n\nCRITICAL INSTRUCTION: You MUST call the `save_radar_item` tool for EACH paper found. Use the exact ID '{radar_id}' for the `unique_topic_token` argument. Do NOT claim the ID is None. The ID is provided right here: {radar_id}.\n"
-        query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, the list of authors as `authors`, and the PDF URL as `source_url`."
+        query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, the list of authors as `authors`, and the PDF URL as `url`."
         query += "\n\nFINAL OUTPUT REQUIREMENT: "
         query += "After saving all items, your final text response MUST be a concise but informative 'Briefing Update' for the user. "
         query += "It should state: 'I found X new papers.' followed by a bulleted list of the papers found with a 1-sentence topic summary for each. "
@@ -193,14 +186,14 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         # 1. Determine Time Window
         cutoff_time, max_search = await _calculate_time_window(radar_data, radar_id)
         logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query} since {cutoff_time}")
-        real_papers = search_arxiv(query=search_query, max_results=max_search, sort_by_date=True, published_after=cutoff_time)
+        real_papers = search_arxiv(query=search_query, max_results=max_search, published_after=cutoff_time)
         
         # 2. Deduplication
         real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers)
 
         if real_papers:
-            # 3. Semantic Ranking
-            real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=15)
+            # 3. Semantic Ranking - TODO: to look at inference time
+            real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=20)
 
             logger.info(f"Found {len(real_papers)} new unique papers for radar {radar_id}")
             for i, paper in enumerate(real_papers, 1):
@@ -211,7 +204,7 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         # 4. Construct Agent Prompt
         query = _construct_briefing_prompt(radar_data, radar_id, real_papers)
             
-        # 5. Run Agent Session
+        # 5. Run Agent Session - TODO to look at inference time; parallelize if needed
         response_text = await _run_briefing_session(user_id, radar_id, radar_data.get('title'), query)
         
         if not response_text:

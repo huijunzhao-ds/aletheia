@@ -138,12 +138,13 @@ class UserDataService:
         Returns a list of dicts with 'source_url' and 'title'.
         """
         # Select only necessary fields to reduce cost/bandwidth
-        docs = self.get_radar_items_collection(user_id, radar_id).select(["source_url", "title"]).stream()
+        # Select only necessary fields to reduce cost/bandwidth
+        docs = self.get_radar_items_collection(user_id, radar_id).select(["url", "title"]).stream()
         results = []
         async for doc in docs:
             d = doc.to_dict()
             results.append({
-                "source_url": d.get("source_url"), 
+                "url": d.get("url"),
                 "title": d.get("title")
             })
         return results

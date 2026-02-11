@@ -71,7 +71,7 @@ async def get_radar_details(radar_id: str) -> str:
         logger.error(f"Error in get_radar_details tool: {e}")
         return f"Failed to get radar details: {e}"
 
-async def save_radar_item(unique_topic_token: str, item_title: str, item_summary: str, authors: List[str] = None, source_url: str = None) -> str:
+async def save_radar_item(unique_topic_token: str, item_title: str, item_summary: str, authors: List[str] = None, url: str = None) -> str:
     """
     Saves a single research paper or finding to a specific radar. 
     
@@ -80,7 +80,7 @@ async def save_radar_item(unique_topic_token: str, item_title: str, item_summary
         item_title: The title of the paper.
         item_summary: The summary text.
         authors: Optional list of author names for the paper.
-        source_url: Optional URL to the original source (PDF or webpage).
+        url: Optional URL to the original source (PDF or webpage).
     """
     radar_id = unique_topic_token
     
@@ -159,7 +159,7 @@ async def save_radar_item(unique_topic_token: str, item_title: str, item_summary
             "parent": radar_id,
             "asset_url": asset_url,
             "asset_type": asset_type,
-            "url": source_url,
+            "url": url, # now using the renamed argument
             "timestamp": datetime.datetime.now(datetime.timezone.utc)
         }
         
