@@ -3,6 +3,8 @@ import logging
 import datetime
 import json
 import uuid
+import os
+from google import genai
 from google.adk.runners import Runner
 from google.adk.apps.app import App
 from google.genai import types
@@ -222,91 +224,58 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
     Uses the LLM to rank papers by semantic relevance to the radar description.
     This helps filter out unrelated papers that matched broad keywords.
     """
-    if not papers:
-        return []
-
     # If few papers, just return them
     if len(papers) <= limit:
          return papers
 
     logger.info(f"Ranking {len(papers)} papers for radar '{radar_title}'...")
     
-    prompt = f"TASK: You are a research relevance expert. Select the TOP {limit} most relevant papers for the topic below based on their title and abstract.\n\n"
-    prompt += f"TOPIC: {radar_title}\n"
-    prompt += f"DESCRIPTION: {radar_description}\n\n"
-    prompt += "Evaluate each paper below:\n"
+    prompt = f"""You are a research relevance expert. 
+    Select the TOP {limit} most relevant papers for the topic below based on their title and abstract.
+    TOPIC: {radar_title}
+    DESCRIPTION: {radar_description}
     
-    # We truncate abstract to save tokens but keep enough for relevance
-    # Provide index for easy selection
+    PAPERS:
+    """
     for i, p in enumerate(papers):
-        # Clean title
         title = str(p.get('title', '')).replace('\n', ' ').strip()
-        summary = str(p.get('summary', '')).replace('\n', ' ').strip()[:300]
+        summary = str(p.get('summary', '')).replace('\n', ' ').strip()
         prompt += f"[{i}] {title}\nAbstract: {summary}...\n\n"
-        
-    prompt += f"OUTPUT INSTRUCTION: Return ONLY a JSON list of integers representing the indices of the top {limit} papers, sorted by relevance (most relevant first). Example: [4, 1, 12]"
 
-    # Use a temporary session for ranking
-    # We use a unique ID to avoid collision
-    temp_session_id = f"rank_{uuid.uuid4().hex[:8]}"
-    from app.agent import research_radar_agent
-    rank_app = App(root_agent=research_radar_agent, name="aletheia_ranker")
-    
+    prompt += f"""
+    OUTPUT INSTRUCTION: 
+    Return a JSON list of integers representing the indices of the top {limit} papers, 
+    sorted by relevance (most relevant first). 
+    Example: [4, 1, 12]
+    """
+
     try:
-        # Create session
-        await session_service.create_session(
-            user_id="system_ranker", 
-            session_id=temp_session_id, 
-            app_name="aletheia_ranker",
-            state={}
+        # Direct Client Call (Fast, Stateless)
+        # Using environment variable for API key loaded by app config
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+             logger.warning("No API Key found for ranking. Returning unranked list.")
+             return papers[:limit]
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json", 
+                temperature=0.1
+            )
         )
-
-        runner = Runner(app=rank_app, session_service=session_service)
-        
-        # Run inference
-        # We manually construct a user message to trigger the agent
-        # Note: root_agent might be chatty. We hope it follows instructions.
-        content = types.Content(parts=[types.Part(text=prompt)])
-        
-        async for _ in runner.run_async(user_id="system_ranker", session_id=temp_session_id, new_message=content):
-            pass
-            
-        # Get response
-        final_session = await session_service.get_session(user_id="system_ranker", session_id=temp_session_id, app_name="aletheia_ranker")
-        response_text = ""
-        
-        if final_session and final_session.events:
-             for event in reversed(final_session.events):
-                if getattr(event, "role", None) == "assistant":
-                    content_attr = getattr(event, "content", None)
-                    if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
-                        response_text = "\n".join([str(p.text or "") for p in content_attr.parts if getattr(p, "text", None)])
-                        break
-        
-        # Parse output
-        selected_indices = []
-        if response_text:
-            import re
-            # Try to find JSON list
-            match = re.search(r"\[.*?\]", response_text, re.DOTALL)
-            if match:
-                try:
-                    selected_indices = json.loads(match.group(0))
-                except:
-                    logger.warning(f"Failed to parse ranking JSON: {response_text[:100]}...")
-            else:
-                 logger.warning(f"No JSON found in ranking response: {response_text[:100]}...")
-
-        # Filter papers
+        selected_indices = json.loads(response.text)
+        # Filter and Return
         ranked_papers = []
         if isinstance(selected_indices, list):
             for idx in selected_indices:
                 if isinstance(idx, int) and 0 <= idx < len(papers):
                     ranked_papers.append(papers[idx])
         
-        # If parsing failed or empty, fallback to original order up to limit
         if not ranked_papers:
-            logger.warning("Ranking returned no valid papers, falling back to date sort.")
+            logger.warning("Ranking returned empty list, falling back to date sort.")
             return papers[:limit]
             
         logger.info(f"Ranking complete. Selected {len(ranked_papers)} papers.")
@@ -314,9 +283,4 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
 
     except Exception as e:
         logger.error(f"Ranking failed: {e}")
-        # Cleanup
-        try:
-             await session_service.delete_session(user_id="system_ranker", session_id=temp_session_id, app_name="aletheia_ranker")
-        except:
-             pass
         return papers[:limit]
