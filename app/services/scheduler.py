@@ -4,9 +4,9 @@ import datetime
 import json
 import uuid
 import os
+import asyncio
+from time import time
 from google import genai
-from google.adk.runners import Runner
-from google.adk.apps.app import App
 from google.genai import types
 from app.services import current_user_id, current_radar_id, search_arxiv
 from app.core.session_storage import session_service
@@ -111,66 +111,40 @@ async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list, si
         
     return unique_papers
 
-def _construct_briefing_prompt(radar_data: dict, radar_id: str, papers: list) -> str:
-    """Constructs the system directive prompt for the agent."""
-    query = f"SYSTEM DIRECTIVE: You MUST perform a research briefing for the following Radar.\n"
-    query += f"TARGET_TITLE: **{radar_data.get('title')}**\n"
-    query += f"TARGET_RADAR_ID: **{radar_id}**\n\n"
-    
-    if papers:
-        query += f"I have found {len(papers)} new papers from Arxiv:\n"
-        query += json.dumps(papers, indent=2)
-        query += f"\n\nCRITICAL INSTRUCTION: You MUST call the `save_radar_item` tool for EACH paper found. Use the exact ID '{radar_id}' for the `unique_topic_token` argument. Do NOT claim the ID is None. The ID is provided right here: {radar_id}.\n"
-        query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, the list of authors as `authors`, and the PDF URL as `url`."
-        query += "\n\nFINAL OUTPUT REQUIREMENT: "
-        query += "After saving all items, your final text response MUST be a concise but informative 'Briefing Update' for the user. "
-        query += "It should state: 'I found X new papers.' followed by a bulleted list of the papers found with a 1-sentence topic summary for each. "
-        query += "Do not just say 'I have saved the items'. Give the user the high-level news."
-    else:
-        query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates and synthesize a report."
-        
-    return query
+async def _generate_briefing_with_llm(radar_title: str, papers: list) -> str:
+    """Generates a concise briefing update using a direct LLM call."""
+    if not papers:
+        return f"No new papers found for {radar_title} in this sweep."
 
-async def _run_briefing_session(user_id: str, radar_id: str, radar_title: str, query: str) -> str:
-    """Runs the agent session to process the briefing prompt."""
-    job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
-    target_sync_app_name = "aletheia_radar"
-    from app.agent import research_radar_agent
+    prompt = f"""You are a research assistant.
+    Generate a concise 'Briefing Update' for the user about these new papers found for the Radar '{radar_title}'.
+    
+    REQUIREMENTS:
+    - Start with 'I found X new papers.'
+    - Provide a bulleted list of the top 5 papers.
+    - For each, write a 1-sentence takeaway.
+    - Keep it high-level and news-worthy.
+    
+    PAPERS:
+    """
+    for i, p in enumerate(papers[:10]): # Limit context
+        prompt += f"- {p.get('title')}: {p.get('summary')[:200]}...\n"
 
-    
-    # Add descriptive title for data auditing
-    sync_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    sync_title = f"System sweeping for {sync_date}"
-    
-    await session_service.create_session(
-        user_id=user_id, 
-        session_id=job_session_id, 
-        app_name=target_sync_app_name, 
-        state={
-            "radar_id": radar_id,
-            "title": sync_title 
-        }
-    )
-    
-    scoped_sync_app = App(root_agent=research_radar_agent, name=target_sync_app_name)
-    runner = Runner(app=scoped_sync_app, session_service=session_service)
-    content = types.Content(parts=[types.Part(text=query)])
-    
-    response_text = ""
-    async for _ in runner.run_async(user_id=user_id, session_id=job_session_id, new_message=content):
-        pass
-
-    # Fetch the final session to get the full assistant response
-    final_session = await session_service.get_session(user_id=user_id, session_id=job_session_id, app_name=target_sync_app_name)
-    if final_session and final_session.events:
-        for event in reversed(final_session.events):
-            if getattr(event, "role", None) == "assistant":
-                content_attr = getattr(event, "content", None)
-                if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
-                    response_text = "\n".join([str(p.text or "") for p in content_attr.parts if hasattr(p, "text") and p.text])
-                    break
-                    
-    return response_text
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key: 
+            return "New papers found (LLM summary unavailable)."
+            
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2)
+        )
+        return response.text
+    except Exception as e:
+        logger.error(f"Briefing generation failed: {e}")
+        return f"Found {len(papers)} new papers. Please check the list."
 
 async def execute_radar_sync(user_id: str, radar_id: str):
     current_user_id.set(user_id)
@@ -193,26 +167,54 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         # 2. Deduplication
         real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers, since=cutoff_time)
 
-        if real_papers:
-            # 3. Semantic Ranking - TODO: to look at inference time
-            real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=20)
-
-            logger.info(f"Found {len(real_papers)} new unique papers for radar {radar_id}")
-            for i, paper in enumerate(real_papers, 1):
-                logger.info(f"  Paper {i}: {paper.get('title', 'N/A')} by {', '.join(paper.get('authors', [])[:3])}")
-        else:
+        if not real_papers:
             logger.info(f"No new unique papers found for radar {radar_id}")
+            # Optimization: Skip everything if no papers
+            await user_data_service.save_radar_summary(user_id, radar_id, "No new papers found in the latest sweep.", captured_inc=0)
+            return
 
-        # 4. Construct Agent Prompt
-        query = _construct_briefing_prompt(radar_data, radar_id, real_papers)
-            
-        # 5. Run Agent Session - TODO to look at inference time; parallelize if needed
-        response_text = await _run_briefing_session(user_id, radar_id, radar_data.get('title'), query)
+        # 3. Semantic Ranking  
+        real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=15)
+
+        logger.info(f"Found {len(real_papers)} new unique papers for radar {radar_id}")
         
-        if not response_text:
-            response_text = f"The research sweep for {radar_data.get('title')} is complete."
+        # 4. Parallel Process: Save Items & Generate Briefing
+        
+        # 4a. Save to DB directly (Parallel)
+        save_tasks = []
+        for paper in real_papers:
+            # Map paper dict to firestore schema
+            item_data = {
+                "title": paper.get("title"),
+                "url": paper.get("pdf_url") or paper.get("link"),
+                "summary": paper.get("summary"), # Use abstract as summary
+                "authors": paper.get("authors", []),
+                "published": paper.get("published"),
+                "source": "arxiv",
+                "added_at": datetime.datetime.now(datetime.timezone.utc),
+                "radar_id": radar_id
+            }
+            # Add task
+            save_tasks.append(user_data_service.add_radar_captured_item(user_id, radar_id, item_data))
 
-        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=0)
+        if save_tasks:
+            
+            # Run all save tasks concurrently
+            results = await asyncio.gather(*save_tasks, return_exceptions=True)
+            # Count successes
+            save_count = sum(1 for r in results if not isinstance(r, Exception))
+            # Log errors
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    logger.error(f"Failed to save paper {real_papers[i].get('title')}: {r}")
+
+        # 4b. Generate Briefing (LLM)
+        start_time = time()
+        response_text = await _generate_briefing_with_llm(radar_data.get('title'), real_papers)
+        end_time = time()
+        logger.info(f"Briefing generated in {end_time - start_time} seconds")
+        
+        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=save_count)
         logger.info(f"Proactive sync completed for radar {radar_id}")
 
     except Exception as e:
@@ -250,8 +252,6 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
     """
 
     try:
-        # Direct Client Call (Fast, Stateless)
-        # Using environment variable for API key loaded by app config
         api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
              logger.warning("No API Key found for ranking. Returning unranked list.")

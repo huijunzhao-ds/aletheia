@@ -66,12 +66,23 @@ export const useRadars = (user: User | null) => {
         }
     }, [user]);
 
-    // Sync radar (trigger + poll)
+    // Sync radar (trigger + poll for metadata update)
     const syncRadar = async (radarId: string, initialCount: number, onUpdate: (msg: string) => void) => {
         if (!user) return;
         setLoadingItems(true);
         try {
             const token = await user.getIdToken();
+
+            // 0. Get initial state
+            const initialRes = await fetch(`/api/radars/${radarId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            let initialLastUpdated = "";
+            if (initialRes.ok) {
+                const d = await initialRes.json();
+                initialLastUpdated = d.lastUpdated;
+            }
+
             // 1. Trigger sync
             const syncRes = await fetch(`/api/radars/${radarId}/sync`, {
                 method: 'POST',
@@ -79,37 +90,42 @@ export const useRadars = (user: User | null) => {
             });
 
             if (syncRes.ok) {
-                // 2. Poll for results
+                // 2. Poll for METADATA update (lastUpdated)
                 let attempts = 0;
-                const maxAttempts = 12;
-                let foundNew = false;
+                const maxAttempts = 12; // 12 * 3s = 36s max
+                let syncComplete = false;
 
                 while (attempts < maxAttempts) {
                     attempts++;
-                    await new Promise(resolve => setTimeout(resolve, 10000)); // 10s wait
+                    await new Promise(resolve => setTimeout(resolve, 3000)); // 3s wait
 
                     try {
-                        const itemsRes = await fetch(`/api/radars/${radarId}/items`, {
+                        const checkRes = await fetch(`/api/radars/${radarId}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                         });
-                        if (itemsRes.ok) {
-                            const newItems = await itemsRes.json();
-                            if (newItems.length > initialCount) {
-                                setItems(newItems);
-                                onUpdate(`**Sync Complete.** Found ${newItems.length - initialCount} new items.`);
-                                foundNew = true;
+                        if (checkRes.ok) {
+                            const newData = await checkRes.json();
+                            // Check if lastUpdated has changed
+                            if (newData.lastUpdated !== initialLastUpdated) {
+                                syncComplete = true;
                                 break;
                             }
                         }
                     } catch (e) {
-                        console.error("Polling error", e);
+                        console.error("Polling metadata error", e);
                     }
                 }
-                if (!foundNew) {
-                    onUpdate("Sync timed out or no new items were found.");
+
+                if (syncComplete) {
+                    // 3. Fetch items once
+                    fetchRadarItems(radarId);
+                    onUpdate("Sync completed successfully.");
+                } else {
+                    onUpdate("Sync timed out. Background process may still be running.");
                 }
+
             } else {
-                onUpdate(`Error syncing radar: ${syncRes.statusText}`);
+                onUpdate(`Error triggering sync: ${syncRes.statusText}`);
             }
 
         } catch (error) {
