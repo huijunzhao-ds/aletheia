@@ -180,33 +180,69 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         
         # 4. Parallel Process: Save Items & Generate Briefing
         
-        # 4a. Save to DB directly (Parallel)
-        save_tasks = []
-        for paper in real_papers:
-            # Map paper dict to firestore schema
-            item_data = {
-                "title": paper.get("title"),
-                "url": paper.get("pdf_url") or paper.get("link"),
-                "summary": paper.get("summary"), # Use abstract as summary
-                "authors": paper.get("authors", []),
-                "published": paper.get("published"),
-                "source": "arxiv",
-                "added_at": datetime.datetime.now(datetime.timezone.utc),
-                "radar_id": radar_id
-            }
-            # Add task
-            save_tasks.append(user_data_service.add_radar_captured_item(user_id, radar_id, item_data))
+        # 4a. Process Papers & Save to DB (Fully Parallel)
+        is_audio_podcast = radar_data.get('outputMedia') == 'Audio Podcast'
+        
+        # Helper to generate audio in thread
+        def _generate_audio_sync(text):
+            import re
+            from app.services import generate_audio_summary
+            # Strip markdown and excessive newlines
+            clean_text = re.sub(r'\*\*|__', '', text) 
+            clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_text)
+            clean_text = re.sub(r'#{1,6}\s?', '', clean_text)
+            clean_text = re.sub(r'\n+', ' ', clean_text).strip()
+            return generate_audio_summary(clean_text)
 
-        if save_tasks:
-            
-            # Run all save tasks concurrently
-            results = await asyncio.gather(*save_tasks, return_exceptions=True)
-            # Count successes
-            save_count = sum(1 for r in results if not isinstance(r, Exception))
-            # Log errors
-            for i, r in enumerate(results):
-                if isinstance(r, Exception):
-                    logger.error(f"Failed to save paper {real_papers[i].get('title')}: {r}")
+        loop = asyncio.get_running_loop()
+
+        async def _process_and_save_paper(paper):
+            try:
+                # Map paper dict to firestore schema
+                item_data = {
+                    "title": paper.get("title"),
+                    "url": paper.get("pdf_url") or paper.get("link"),
+                    "summary": paper.get("summary"), # Use abstract as summary
+                    "authors": paper.get("authors", []),
+                    "published": paper.get("published"),
+                    "source": "arxiv",
+                    "added_at": datetime.datetime.now(datetime.timezone.utc),
+                    "radar_id": radar_id
+                }
+
+                # Generate individual audio if requested
+                if is_audio_podcast:
+                    try:
+                        # Construct text for TTS (Title + Summary)
+                        tts_text = f"Title: {paper.get('title')}. Summary: {paper.get('summary')}"
+                        # Truncate to reasonable length for TTS
+                        if len(tts_text) > 2000:
+                            tts_text = tts_text[:2000] + "..."
+                        
+                        audio_path = await loop.run_in_executor(None, _generate_audio_sync, tts_text)
+                        
+                        if not audio_path.startswith("/"):
+                            audio_path = "/" + audio_path
+                        
+                        item_data["asset_type"] = "audio"
+                        item_data["asset_url"] = audio_path
+                        logger.info(f"Generated audio for paper: {paper.get('title')[:30]}")
+                    except Exception as e:
+                        logger.error(f"Failed to generate audio for paper {paper.get('title')}: {e}")
+
+                # Save to DB
+                await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to process paper {paper.get('title')}: {e}")
+                return False
+
+        # Execute all tasks concurrently
+        tasks = [_process_and_save_paper(p) for p in real_papers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Count successes
+        save_count = sum(1 for r in results if r is True)
 
         # 4b. Generate Briefing (LLM)
         start_time = time()
@@ -284,3 +320,68 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
     except Exception as e:
         logger.error(f"Ranking failed: {e}")
         return papers[:limit]
+
+# --- Proactive Scheduling ---
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler()
+
+async def check_all_radars():
+    """
+    Periodically checks all active radars across all users.
+    Triggers execute_radar_sync if the update interval has passed.
+    """
+    logger.info("Running scheduled radar check...")
+    try:
+        all_user_ids = await user_data_service.get_all_users()
+        
+        for user_id in all_user_ids:
+            try:
+                radars = await user_data_service.get_radar_items(user_id)
+                for radar in radars:
+                    if radar.get('status') == 'paused':
+                        continue
+                    
+                    freq = radar.get('frequency', 'Hourly')
+                    last_updated_str = radar.get('lastUpdated')
+                    radar_id = radar.get('id')
+                    
+                    should_run = False
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    
+                    if not last_updated_str or last_updated_str in ["Never", "Just updated"]:
+                        # "Just updated" usually means created but not yet synced, or user manually triggered.
+                        # If "Never", definitely run.
+                        should_run = last_updated_str == "Never"
+                    else:
+                        try:
+                            # Format: "%Y-%m-%d %H:%M"
+                            last_updated = datetime.datetime.strptime(last_updated_str, "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
+                            delta = now - last_updated
+                            
+                            if freq == 'Hourly' and delta > datetime.timedelta(hours=1): should_run = True
+                            elif freq == 'Daily' and delta > datetime.timedelta(days=1): should_run = True
+                            elif freq == 'Weekly' and delta > datetime.timedelta(days=7): should_run = True
+                            elif freq == 'Monthly' and delta > datetime.timedelta(days=30): should_run = True
+                        except Exception as e:
+                            logger.warning(f"Error parsing date for radar {radar_id}: {e}")
+                            should_run = True # safer to run if date is bad
+
+                    if should_run:
+                        logger.info(f"Triggering scheduled sync for radar {radar_id} ({freq})")
+                        # Fire and forget
+                        asyncio.create_task(execute_radar_sync(user_id, radar_id))
+            except Exception as ue:
+                logger.error(f"Error checking radars for user {user_id}: {ue}")
+
+    except Exception as e:
+        logger.error(f"Scheduled check failed: {e}")
+
+def start_scheduler():
+    """Starts the background scheduler."""
+    if not scheduler.running:
+        # Check every 15 minutes
+        scheduler.add_job(check_all_radars, 'interval', minutes=15)
+        scheduler.start()
+        logger.info("Proactive Radar Scheduler started (interval: 15m).")

@@ -46,20 +46,6 @@ async def get_radars(user_id: str = Depends(get_current_user)):
         logger.error(f"Error fetching radars: {e}")
         return []
         
-@router.get("/{radar_id}")
-async def get_radar(radar_id: str, user_id: str = Depends(get_current_user)):
-    try:
-        doc = await user_data_service.get_radar_collection(user_id).document(radar_id).get()
-        if not doc.exists:
-            raise HTTPException(status_code=404, detail="Radar not found")
-        d = doc.to_dict()
-        d["id"] = doc.id
-        return d
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching radar {radar_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 @router.get("/briefing")
 async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depends(get_current_user)):
     """
@@ -116,6 +102,21 @@ async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depe
     except Exception as e:
         logger.error(f"Error generating briefing: {e}")
         return {"summary": "Ready to track your research updates."}
+
+@router.get("/{radar_id}")
+async def get_radar(radar_id: str, user_id: str = Depends(get_current_user)):
+    try:
+        doc = await user_data_service.get_radar_collection(user_id).document(radar_id).get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Radar not found")
+        d = doc.to_dict()
+        d["id"] = doc.id
+        return d
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching radar {radar_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{radar_id}/sync")
 async def sync_radar(radar_id: str, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user)):
