@@ -51,34 +51,60 @@ app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(user.router, prefix="/api/user", tags=["User"])
 app.include_router(activities.router, prefix="/api/activities", tags=["Activities"])
 
-# Static Docs Lazy Restore Handler
-@app.get("/static/docs/{filename}")
-async def serve_doc(filename: str):
+@app.get("/static/{folder}/{filename}")
+async def serve_static_content(folder: str, filename: str):
     """
-    Intercepts static doc requests to lazily restore them from GCS if missing from local ephemeral disk.
+    Intercepts static content requests (docs, audio, slides, videos) to lazily restore 
+    them from GCS if missing from local ephemeral disk.
     """
-    local_path = os.path.join(DOCS_DIR, filename)
-    
-    if not os.path.exists(local_path):
-        # Lazy Restore from GCS
-        try:
-            from app.core.session_storage import get_storage_client
-            # BUCKET_NAME imported from config
-            client = get_storage_client()
-            if client and BUCKET_NAME:
-                bucket = client.bucket(BUCKET_NAME)
-                blob_name = f"docs/{filename}"
-                blob = bucket.blob(blob_name)
-                
-                if blob.exists():
-                    logger.info(f"Restoring requested doc from GCS: {blob_name}")
-                    blob.download_to_filename(local_path)
-        except Exception as e:
-            logger.error(f"Failed to restore {filename} for serving: {e}")
+    if folder not in ["docs", "audio", "slides", "videos"]:
+        raise HTTPException(status_code=403, detail="Invalid folder access")
 
+    # Mapping URI folder to local directory
+    folder_map = {
+        "docs": DOCS_DIR,
+        "audio": os.path.join(STATIC_DIR, "audio"),
+        "slides": os.path.join(STATIC_DIR, "slides"),
+        "videos": os.path.join(STATIC_DIR, "videos")
+    }
+    
+    target_dir = folder_map.get(folder)
+    # Ensure dir exists locally
+    os.makedirs(target_dir, exist_ok=True)
+    
+    local_path = os.path.join(target_dir, filename)
+    
+    # Sanity check for path traversal
+    if not os.path.abspath(local_path).startswith(os.path.abspath(target_dir)):
+        raise HTTPException(status_code=403, detail="Invalid path")
+    
+    # 1. Check Local
     if os.path.exists(local_path):
         return FileResponse(local_path)
-    
+
+    # 2. Try Restore from GCS
+    try:
+        from google.cloud import storage
+        client = storage.Client()
+        # Ensure BUCKET_NAME is set
+        bucket_name = os.getenv("GCS_BUCKET_NAME") or os.getenv("VITE_FIREBASE_STORAGE_BUCKET") or f"{os.getenv('GOOGLE_CLOUD_PROJECT')}-aletheia-docs"
+        
+        if bucket_name:
+            bucket = client.bucket(bucket_name)
+            # GCS Path: e.g. "audio/filename.mp3"
+            blob_name = f"{folder}/{filename}"
+            blob = bucket.blob(blob_name)
+            
+            if blob.exists():
+                logger.info(f"Restoring {blob_name} from GCS to {local_path}")
+                blob.download_to_filename(local_path)
+                return FileResponse(local_path)
+            else:
+                logger.warning(f"File not found in GCS: {blob_name}")
+    except Exception as e:
+        logger.error(f"Failed to restore {folder}/{filename} from GCS: {e}")
+            
+    # 3. 404
     raise HTTPException(status_code=404, detail="File not found")
 
 # Mount Static Files
