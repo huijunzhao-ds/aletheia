@@ -3,11 +3,13 @@ import React from 'react';
 interface CapturedItem {
     id: string;
     title: string;
-    summary: string;
+    summary?: string;
     url?: string;
-    authors: string[];
-    timestamp: string;
-    type: string;
+    authors?: string[];
+    timestamp?: string;
+    added_at?: string;
+    published?: string;
+    type?: string;
     tags?: string[];
 }
 
@@ -125,7 +127,7 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
                                 {radarName || item.type || 'Research Radar'}
                             </span>
                             <span className="text-zinc-500 text-xs font-medium">
-                                {getRelativeTime(item.timestamp)}
+                                {getRelativeTime(item.added_at || item.published || item.timestamp || '')}
                             </span>
                         </div>
                         <button

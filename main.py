@@ -27,6 +27,10 @@ app = FastAPI()
 async def startup_event():
     # Logging startup
     logger.info("Application startup complete.")
+    
+    # Start Background Scheduler for Radars
+    from app.services.scheduler import start_scheduler
+    start_scheduler()
 
 # CORS Middleware setup
 app.add_middleware(

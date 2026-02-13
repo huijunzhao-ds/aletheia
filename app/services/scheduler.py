@@ -3,8 +3,10 @@ import logging
 import datetime
 import json
 import uuid
-from google.adk.runners import Runner
-from google.adk.apps.app import App
+import os
+import asyncio
+from time import time
+from google import genai
 from google.genai import types
 from app.services import current_user_id, current_radar_id, search_arxiv
 from app.core.session_storage import session_service
@@ -27,18 +29,11 @@ def _build_arxiv_query(radar_data: dict) -> str:
     # 2. Keywords
     keywords = arxiv_config.get('keywords')
     if isinstance(keywords, list):
-        # We want any of the keywords to appear in EITHER title OR abstract
-        kw_terms = []
-        for k in keywords:
-            clean_k = k.strip()
-            if clean_k:
-                kw_terms.append(f"ti:{clean_k}")
-                kw_terms.append(f"abs:{clean_k}")
-        
-        if kw_terms:
+        kw_groups = [f"(ti:{k.strip()} OR abs:{k.strip()})" for k in keywords if k.strip()]
+        if kw_groups:
             logic = arxiv_config.get('keywordLogic', 'OR').upper()
             join_op = " AND " if logic == "AND" else " OR "
-            kw_part = join_op.join(kw_terms)
+            kw_part = join_op.join(kw_groups)
             terms.append(f"({kw_part})")
             
     if terms:
@@ -89,14 +84,14 @@ async def _calculate_time_window(radar_data: dict, radar_id: str) -> tuple[datet
             
     return cutoff_time, max_search
 
-async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list) -> list:
+async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list, since: datetime.datetime = None) -> list:
     """Filters out papers that have already been captured for this radar."""
     if not papers:
         return []
 
     # Fetch existing captured keys to filter out duplicates
-    existing_keys = await user_data_service.get_all_radar_captured_keys(user_id, radar_id)
-    existing_urls = {k.get("source_url") for k in existing_keys if k.get("source_url")}
+    existing_keys = await user_data_service.get_all_radar_captured_keys(user_id, radar_id, since=since)
+    existing_urls = {k.get("url") for k in existing_keys if k.get("url")}
     existing_titles = {k.get("title", "").lower().strip() for k in existing_keys if k.get("title")}
     
     unique_papers = []
@@ -116,66 +111,40 @@ async def _filter_duplicate_papers(user_id: str, radar_id: str, papers: list) ->
         
     return unique_papers
 
-def _construct_briefing_prompt(radar_data: dict, radar_id: str, papers: list) -> str:
-    """Constructs the system directive prompt for the agent."""
-    query = f"SYSTEM DIRECTIVE: You MUST perform a research briefing for the following Radar.\n"
-    query += f"TARGET_TITLE: **{radar_data.get('title')}**\n"
-    query += f"TARGET_RADAR_ID: **{radar_id}**\n\n"
-    
-    if papers:
-        query += f"I have found {len(papers)} new papers from Arxiv:\n"
-        query += json.dumps(papers, indent=2)
-        query += f"\n\nCRITICAL INSTRUCTION: You MUST call the `save_radar_item` tool for EACH paper found. Use the exact ID '{radar_id}' for the `unique_topic_token` argument. Do NOT claim the ID is None. The ID is provided right here: {radar_id}.\n"
-        query += "\nFor each call, provide the specific paper title as `item_title`, a detailed academic digest (3-4 paragraphs) as `item_summary`, the list of authors as `authors`, and the PDF URL as `source_url`."
-        query += "\n\nFINAL OUTPUT REQUIREMENT: "
-        query += "After saving all items, your final text response MUST be a concise but informative 'Briefing Update' for the user. "
-        query += "It should state: 'I found X new papers.' followed by a bulleted list of the papers found with a 1-sentence topic summary for each. "
-        query += "Do not just say 'I have saved the items'. Give the user the high-level news."
-    else:
-        query += "No new Arxiv papers were found in the immediate sweep, but please check other sources for any significant updates and synthesize a report."
-        
-    return query
+async def _generate_briefing_with_llm(radar_title: str, papers: list) -> str:
+    """Generates a concise briefing update using a direct LLM call."""
+    if not papers:
+        return f"No new papers found for {radar_title} in this sweep."
 
-async def _run_briefing_session(user_id: str, radar_id: str, radar_title: str, query: str) -> str:
-    """Runs the agent session to process the briefing prompt."""
-    job_session_id = f"sync_{radar_id}_{uuid.uuid4().hex[:8]}"
-    target_sync_app_name = "aletheia_radar"
-    from app.agent import research_radar_agent
+    prompt = f"""You are a research assistant.
+    Generate a concise 'Briefing Update' for the user about these new papers found for the Radar '{radar_title}'.
+    
+    REQUIREMENTS:
+    - Start with 'I found X new papers.'
+    - Provide a bulleted list of the top 5 papers.
+    - For each, write a 1-sentence takeaway.
+    - Keep it high-level and news-worthy.
+    
+    PAPERS:
+    """
+    for i, p in enumerate(papers[:10]): # Limit context
+        prompt += f"- {p.get('title')}: {p.get('summary')[:200]}...\n"
 
-    
-    # Add descriptive title for data auditing
-    sync_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    sync_title = f"System sweeping for {sync_date}"
-    
-    await session_service.create_session(
-        user_id=user_id, 
-        session_id=job_session_id, 
-        app_name=target_sync_app_name, 
-        state={
-            "radar_id": radar_id,
-            "title": sync_title 
-        }
-    )
-    
-    scoped_sync_app = App(root_agent=research_radar_agent, name=target_sync_app_name)
-    runner = Runner(app=scoped_sync_app, session_service=session_service)
-    content = types.Content(parts=[types.Part(text=query)])
-    
-    response_text = ""
-    async for _ in runner.run_async(user_id=user_id, session_id=job_session_id, new_message=content):
-        pass
-
-    # Fetch the final session to get the full assistant response
-    final_session = await session_service.get_session(user_id=user_id, session_id=job_session_id, app_name=target_sync_app_name)
-    if final_session and final_session.events:
-        for event in reversed(final_session.events):
-            if getattr(event, "role", None) == "assistant":
-                content_attr = getattr(event, "content", None)
-                if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
-                    response_text = "\n".join([str(p.text or "") for p in content_attr.parts if hasattr(p, "text") and p.text])
-                    break
-                    
-    return response_text
+    try:
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key: 
+            return "New papers found (LLM summary unavailable)."
+            
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.2)
+        )
+        return response.text
+    except Exception as e:
+        logger.error(f"Briefing generation failed: {e}")
+        return f"Found {len(papers)} new papers. Please check the list."
 
 async def execute_radar_sync(user_id: str, radar_id: str):
     current_user_id.set(user_id)
@@ -193,31 +162,95 @@ async def execute_radar_sync(user_id: str, radar_id: str):
         # 1. Determine Time Window
         cutoff_time, max_search = await _calculate_time_window(radar_data, radar_id)
         logger.info(f"Running real Arxiv search for radar {radar_id} with query: {search_query} since {cutoff_time}")
-        real_papers = search_arxiv(query=search_query, max_results=max_search, sort_by_date=True, published_after=cutoff_time)
+        real_papers = search_arxiv(query=search_query, max_results=max_search, published_after=cutoff_time)
         
         # 2. Deduplication
-        real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers)
+        real_papers = await _filter_duplicate_papers(user_id, radar_id, real_papers, since=cutoff_time)
 
-        if real_papers:
-            # 3. Semantic Ranking
-            real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=15)
-
-            logger.info(f"Found {len(real_papers)} new unique papers for radar {radar_id}")
-            for i, paper in enumerate(real_papers, 1):
-                logger.info(f"  Paper {i}: {paper.get('title', 'N/A')} by {', '.join(paper.get('authors', [])[:3])}")
-        else:
+        if not real_papers:
             logger.info(f"No new unique papers found for radar {radar_id}")
+            # Optimization: Skip everything if no papers
+            await user_data_service.save_radar_summary(user_id, radar_id, "No new papers found in the latest sweep.", captured_inc=0)
+            return
 
-        # 4. Construct Agent Prompt
-        query = _construct_briefing_prompt(radar_data, radar_id, real_papers)
-            
-        # 5. Run Agent Session
-        response_text = await _run_briefing_session(user_id, radar_id, radar_data.get('title'), query)
+        # 3. Semantic Ranking  
+        real_papers = await rank_papers_with_llm(real_papers, radar_data.get('title'), radar_data.get('description', ''), limit=15)
+
+        logger.info(f"Found {len(real_papers)} new unique papers for radar {radar_id}")
         
-        if not response_text:
-            response_text = f"The research sweep for {radar_data.get('title')} is complete."
+        # 4. Parallel Process: Save Items & Generate Briefing
+        
+        # 4a. Process Papers & Save to DB (Fully Parallel)
+        is_audio_podcast = radar_data.get('outputMedia') == 'Audio Podcast'
+        
+        # Helper to generate audio in thread
+        def _generate_audio_sync(text):
+            import re
+            from app.services import generate_audio_summary
+            # Strip markdown and excessive newlines
+            clean_text = re.sub(r'\*\*|__', '', text) 
+            clean_text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean_text)
+            clean_text = re.sub(r'#{1,6}\s?', '', clean_text)
+            clean_text = re.sub(r'\n+', ' ', clean_text).strip()
+            return generate_audio_summary(clean_text)
 
-        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=0)
+        loop = asyncio.get_running_loop()
+
+        async def _process_and_save_paper(paper):
+            try:
+                # Map paper dict to firestore schema
+                item_data = {
+                    "title": paper.get("title"),
+                    "url": paper.get("pdf_url") or paper.get("link"),
+                    "summary": paper.get("summary"), # Use abstract as summary
+                    "authors": paper.get("authors", []),
+                    "published": paper.get("published"),
+                    "source": "arxiv",
+                    "added_at": datetime.datetime.now(datetime.timezone.utc),
+                    "radar_id": radar_id
+                }
+
+                # Generate individual audio if requested
+                if is_audio_podcast:
+                    try:
+                        # Construct text for TTS (Title + Summary)
+                        tts_text = f"Title: {paper.get('title')}. Summary: {paper.get('summary')}"
+                        # Truncate to reasonable length for TTS
+                        if len(tts_text) > 2000:
+                            tts_text = tts_text[:2000] + "..."
+                        
+                        audio_path = await loop.run_in_executor(None, _generate_audio_sync, tts_text)
+                        
+                        if not audio_path.startswith("/"):
+                            audio_path = "/" + audio_path
+                        
+                        item_data["asset_type"] = "audio"
+                        item_data["asset_url"] = audio_path
+                        logger.info(f"Generated audio for paper: {paper.get('title')[:30]}")
+                    except Exception as e:
+                        logger.error(f"Failed to generate audio for paper {paper.get('title')}: {e}")
+
+                # Save to DB
+                await user_data_service.add_radar_captured_item(user_id, radar_id, item_data)
+                return True
+            except Exception as e:
+                logger.error(f"Failed to process paper {paper.get('title')}: {e}")
+                return False
+
+        # Execute all tasks concurrently
+        tasks = [_process_and_save_paper(p) for p in real_papers]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Count successes
+        save_count = sum(1 for r in results if r is True)
+
+        # 4b. Generate Briefing (LLM)
+        start_time = time()
+        response_text = await _generate_briefing_with_llm(radar_data.get('title'), real_papers)
+        end_time = time()
+        logger.info(f"Briefing generated in {end_time - start_time} seconds")
+        
+        await user_data_service.save_radar_summary(user_id, radar_id, response_text, captured_inc=save_count)
         logger.info(f"Proactive sync completed for radar {radar_id}")
 
     except Exception as e:
@@ -229,91 +262,56 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
     Uses the LLM to rank papers by semantic relevance to the radar description.
     This helps filter out unrelated papers that matched broad keywords.
     """
-    if not papers:
-        return []
-
     # If few papers, just return them
     if len(papers) <= limit:
          return papers
 
     logger.info(f"Ranking {len(papers)} papers for radar '{radar_title}'...")
     
-    prompt = f"TASK: You are a research relevance expert. Select the TOP {limit} most relevant papers for the topic below based on their title and abstract.\n\n"
-    prompt += f"TOPIC: {radar_title}\n"
-    prompt += f"DESCRIPTION: {radar_description}\n\n"
-    prompt += "Evaluate each paper below:\n"
+    prompt = f"""You are a research relevance expert. 
+    Select the TOP {limit} most relevant papers for the topic below based on their title and abstract.
+    TOPIC: {radar_title}
+    DESCRIPTION: {radar_description}
     
-    # We truncate abstract to save tokens but keep enough for relevance
-    # Provide index for easy selection
+    PAPERS:
+    """
     for i, p in enumerate(papers):
-        # Clean title
         title = str(p.get('title', '')).replace('\n', ' ').strip()
-        summary = str(p.get('summary', '')).replace('\n', ' ').strip()[:300]
+        summary = str(p.get('summary', '')).replace('\n', ' ').strip()
         prompt += f"[{i}] {title}\nAbstract: {summary}...\n\n"
-        
-    prompt += f"OUTPUT INSTRUCTION: Return ONLY a JSON list of integers representing the indices of the top {limit} papers, sorted by relevance (most relevant first). Example: [4, 1, 12]"
 
-    # Use a temporary session for ranking
-    # We use a unique ID to avoid collision
-    temp_session_id = f"rank_{uuid.uuid4().hex[:8]}"
-    from app.agent import research_radar_agent
-    rank_app = App(root_agent=research_radar_agent, name="aletheia_ranker")
-    
+    prompt += f"""
+    OUTPUT INSTRUCTION: 
+    Return a JSON list of integers representing the indices of the top {limit} papers, 
+    sorted by relevance (most relevant first). 
+    Example: [4, 1, 12]
+    """
+
     try:
-        # Create session
-        await session_service.create_session(
-            user_id="system_ranker", 
-            session_id=temp_session_id, 
-            app_name="aletheia_ranker",
-            state={}
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+             logger.warning("No API Key found for ranking. Returning unranked list.")
+             return papers[:limit]
+
+        client = genai.Client(api_key=api_key)
+        response = await client.aio.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json", 
+                temperature=0.1
+            )
         )
-
-        runner = Runner(app=rank_app, session_service=session_service)
-        
-        # Run inference
-        # We manually construct a user message to trigger the agent
-        # Note: root_agent might be chatty. We hope it follows instructions.
-        content = types.Content(parts=[types.Part(text=prompt)])
-        
-        async for _ in runner.run_async(user_id="system_ranker", session_id=temp_session_id, new_message=content):
-            pass
-            
-        # Get response
-        final_session = await session_service.get_session(user_id="system_ranker", session_id=temp_session_id, app_name="aletheia_ranker")
-        response_text = ""
-        
-        if final_session and final_session.events:
-             for event in reversed(final_session.events):
-                if getattr(event, "role", None) == "assistant":
-                    content_attr = getattr(event, "content", None)
-                    if content_attr and hasattr(content_attr, "parts") and content_attr.parts:
-                        response_text = "\n".join([str(p.text or "") for p in content_attr.parts if getattr(p, "text", None)])
-                        break
-        
-        # Parse output
-        selected_indices = []
-        if response_text:
-            import re
-            # Try to find JSON list
-            match = re.search(r"\[.*?\]", response_text, re.DOTALL)
-            if match:
-                try:
-                    selected_indices = json.loads(match.group(0))
-                except:
-                    logger.warning(f"Failed to parse ranking JSON: {response_text[:100]}...")
-            else:
-                 logger.warning(f"No JSON found in ranking response: {response_text[:100]}...")
-
-        # Filter papers
+        selected_indices = json.loads(response.text)
+        # Filter and Return
         ranked_papers = []
         if isinstance(selected_indices, list):
             for idx in selected_indices:
                 if isinstance(idx, int) and 0 <= idx < len(papers):
                     ranked_papers.append(papers[idx])
         
-        # If parsing failed or empty, fallback to original order up to limit
         if not ranked_papers:
-            logger.warning("Ranking returned no valid papers, falling back to date sort.")
+            logger.warning("Ranking returned empty list, falling back to date sort.")
             return papers[:limit]
             
         logger.info(f"Ranking complete. Selected {len(ranked_papers)} papers.")
@@ -321,9 +319,69 @@ async def rank_papers_with_llm(papers: list, radar_title: str, radar_description
 
     except Exception as e:
         logger.error(f"Ranking failed: {e}")
-        # Cleanup
-        try:
-             await session_service.delete_session(user_id="system_ranker", session_id=temp_session_id, app_name="aletheia_ranker")
-        except:
-             pass
         return papers[:limit]
+
+# --- Proactive Scheduling ---
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+scheduler = AsyncIOScheduler()
+
+async def check_all_radars():
+    """
+    Periodically checks all active radars across all users.
+    Triggers execute_radar_sync if the update interval has passed.
+    """
+    logger.info("Running scheduled radar check...")
+    try:
+        all_user_ids = await user_data_service.get_all_users()
+        
+        for user_id in all_user_ids:
+            try:
+                radars = await user_data_service.get_radar_items(user_id)
+                for radar in radars:
+                    if radar.get('status') == 'paused':
+                        continue
+                    
+                    freq = radar.get('frequency', 'Hourly')
+                    last_updated_str = radar.get('lastUpdated')
+                    radar_id = radar.get('id')
+                    
+                    should_run = False
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    
+                    if not last_updated_str or last_updated_str in ["Never", "Just updated"]:
+                        # "Just updated" usually means created but not yet synced, or user manually triggered.
+                        # If "Never", definitely run.
+                        should_run = last_updated_str == "Never"
+                    else:
+                        try:
+                            # Format: "%Y-%m-%d %H:%M"
+                            last_updated = datetime.datetime.strptime(last_updated_str, "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
+                            delta = now - last_updated
+                            
+                            if freq == 'Hourly' and delta > datetime.timedelta(hours=1): should_run = True
+                            elif freq == 'Daily' and delta > datetime.timedelta(days=1): should_run = True
+                            elif freq == 'Weekly' and delta > datetime.timedelta(days=7): should_run = True
+                            elif freq == 'Monthly' and delta > datetime.timedelta(days=30): should_run = True
+                        except Exception as e:
+                            logger.warning(f"Error parsing date for radar {radar_id}: {e}")
+                            should_run = True # safer to run if date is bad
+
+                    if should_run:
+                        logger.info(f"Triggering scheduled sync for radar {radar_id} ({freq})")
+                        # Fire and forget
+                        asyncio.create_task(execute_radar_sync(user_id, radar_id))
+            except Exception as ue:
+                logger.error(f"Error checking radars for user {user_id}: {ue}")
+
+    except Exception as e:
+        logger.error(f"Scheduled check failed: {e}")
+
+def start_scheduler():
+    """Starts the background scheduler."""
+    if not scheduler.running:
+        # Check every 15 minutes
+        scheduler.add_job(check_all_radars, 'interval', minutes=15)
+        scheduler.start()
+        logger.info("Proactive Radar Scheduler started (interval: 15m).")
