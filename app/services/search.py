@@ -4,9 +4,15 @@ import httpx
 import urllib.parse
 import re
 import arxiv
+import time
+import threading
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# Global lock for arXiv API to enforce 1 request at a time and 3s delay
+_ARXIV_LOCK = threading.Lock()
+_LAST_ARXIV_CALL = 0.0
 
 def web_search(query: str) -> str:
     """
@@ -66,6 +72,8 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
     Returns:
         A list of dictionaries containing paper details (title, summary, authors, pdf_url).
     """
+    global _LAST_ARXIV_CALL
+    
     # If published_after is set, we want ALL papers in that window, so we uncap max_results
     # The loop will terminate based on the date check or server-side filter.
     search_max_results = None if published_after else max_results
@@ -96,34 +104,63 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
         return []
     
     search = arxiv.Search(query=final_query, max_results=search_max_results, sort_by=arxiv.SortCriterion.SubmittedDate)
-    results = []
-    try:
-        for result in client.results(search):
-            if published_after:
-                res_date = result.published
-                if not res_date.tzinfo:
-                    res_date = res_date.replace(tzinfo=datetime.timezone.utc)
-                
-                check_date = published_after
-                if not check_date.tzinfo:
-                    check_date = check_date.replace(tzinfo=datetime.timezone.utc)
-
-                if res_date < check_date:
-                    break
-           
-            results.append({
-                "title": result.title,
-                "summary": result.summary,
-                "authors": [a.name for a in result.authors],
-                "published": result.published.strftime("%Y-%m-%d"),
-                "pdf_url": result.pdf_url
-            })
+    
+    max_retries = 3
+    
+    # ACQUIRE GLOBAL LOCK
+    with _ARXIV_LOCK:
+        # Enforce 3.0s delay since last call
+        elapsed = time.time() - _LAST_ARXIV_CALL
+        if elapsed < 3.0:
+            time.sleep(3.0 - elapsed)
             
-    except Exception as e:
-        logger.error(f"Error searching arXiv: {e}")
-        # Return whatever we found so far instead of empty list if possible, or just empty
-        return results
-        
+        try:
+            for attempt in range(max_retries):
+                results = []
+                try:
+                    # Update timestamp before making the request
+                    _LAST_ARXIV_CALL = time.time()
+                    
+                    for result in client.results(search):
+                        if published_after:
+                            res_date = result.published
+                            if not res_date.tzinfo:
+                                res_date = res_date.replace(tzinfo=datetime.timezone.utc)
+                            
+                            check_date = published_after
+                            if not check_date.tzinfo:
+                                check_date = check_date.replace(tzinfo=datetime.timezone.utc)
+
+                            if res_date < check_date:
+                                break
+                    
+                        results.append({
+                            "title": result.title,
+                            "summary": result.summary,
+                            "authors": [a.name for a in result.authors],
+                            "published": result.published.strftime("%Y-%m-%d"),
+                            "pdf_url": result.pdf_url
+                        })
+                    
+                    # If successful, return immediately
+                    return results
+                        
+                except Exception as e:
+                    is_rate_limit = "429" in str(e)
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait_seconds = 5 * (2 ** attempt) # 5, 10, 20...
+                        logger.warning(f"ArXiv 429 rate limit. Retrying in {wait_seconds}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(wait_seconds)
+                        continue
+                    
+                    logger.error(f"Error searching arXiv: {e}")
+                    # Return whatever we found so far in this attempt
+                    return results
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in search_arxiv: {e}")
+            return []
+            
     return results
 
 def scrape_website(url: str) -> str:
