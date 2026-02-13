@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+import time
 from typing import List, Dict
 from gtts import gTTS
 from pptx import Presentation
@@ -25,11 +26,24 @@ def generate_audio_file(text: str, schema: str = "en") -> str:
         filename = f"{uuid.uuid4()}.mp3"
         filepath = os.path.join(AUDIO_DIR, filename)
         
-        tts = gTTS(text=text, lang=schema)
-        tts.save(filepath)
+        # Retry logic for gTTS
+        max_retries = 3
+        current_error = None
         
-        logger.info(f"Generated audio file: {filepath}")
-        return os.path.relpath(filepath, BASE_DIR)
+        for attempt in range(max_retries):
+            try:
+                # Use 'com' or 'us' explicitly
+                tts = gTTS(text=text, lang=schema, tld='us')
+                tts.save(filepath)
+                logger.info(f"Generated audio file: {filepath}")
+                return os.path.relpath(filepath, BASE_DIR)
+            except Exception as e:
+                current_error = e
+                logger.warning(f"gTTS attempt {attempt+1} failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                    
+        raise current_error
     except Exception as e:
         logger.error(f"Error generating audio: {e}")
         raise
