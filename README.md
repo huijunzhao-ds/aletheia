@@ -108,14 +108,15 @@ Aletheia uses a **multi-agent orchestration** pattern powered by Google's ADK an
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
 - [x] Implement radar and exploration features
-- [ ] Enhance radar search and ranking
+- [x] Enhance radar search and ranking
     - search query (done)
     - ordering of initial search results (done)
     - refine selection of papers (done)
     - ranking according to semantic similarity to radar title and description (done)
     - parallel summary generation for multiple papers (done)
-    - next level ranking according to user preferences - build user profile summary (WIP)
-    - why user interested in this paper - add to summary
+    - next level ranking according to user preferences - build user profile summary (done)
+    - why user interested in this paper - add to summary (done)
+    - check time tracking for proactive radar sync
 
 - [ ] Enhance exploration chat context management
 - [ ] Implement projects features 
