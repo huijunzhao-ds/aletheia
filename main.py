@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from app.core.config import STATIC_DIR, DOCS_DIR, BUCKET_NAME
-from app.api import research, threads, session, radars, exploration, projects, user
+from app.api import research, threads, session, radars, exploration, projects, user, activities
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +49,7 @@ app.include_router(session.router, prefix="/api/session", tags=["Session"]) # /a
 app.include_router(exploration.router, prefix="/api/exploration", tags=["Exploration"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(user.router, prefix="/api/user", tags=["User"])
+app.include_router(activities.router, prefix="/api/activities", tags=["Activities"])
 
 # Static Docs Lazy Restore Handler
 @app.get("/static/docs/{filename}")

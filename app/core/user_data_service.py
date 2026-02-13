@@ -193,5 +193,37 @@ class UserDataService:
             results.append(d)
         return results
 
+    # --- User Activity & Profiling ---
+    def get_activities_collection(self, user_id: str):
+        return self._get_user_ref(user_id).collection("activities")
+
+    async def add_user_activity(self, user_id: str, activity_data: Dict[str, Any]):
+        activity_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc)
+        return await self.get_activities_collection(user_id).add(activity_data)
+
+    async def get_recent_user_activities(self, user_id: str, limit: int = 50):
+        docs = self.get_activities_collection(user_id).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            results.append(d)
+        return results
+
+    async def save_user_profile(self, user_id: str, profile_text: str):
+        """Saves the AI-generated user research persona."""
+        if not self.db: return
+        await self._get_user_ref(user_id).set({
+            "research_persona": profile_text,
+            "persona_updated_at": datetime.datetime.now(datetime.timezone.utc)
+        }, merge=True)
+
+    async def get_user_profile(self, user_id: str) -> str:
+        if not self.db: return ""
+        doc = await self._get_user_ref(user_id).get()
+        if doc.exists:
+             return (doc.to_dict() or {}).get("research_persona", "")
+        return ""
+
+
 # Singleton instance
 user_data_service = UserDataService()

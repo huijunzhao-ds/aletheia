@@ -4,6 +4,7 @@ import datetime
 import json
 import uuid
 import os
+import random
 import asyncio
 from time import time
 from google import genai
@@ -11,6 +12,8 @@ from google.genai import types
 from app.services import current_user_id, current_radar_id, search_arxiv
 from app.core.session_storage import session_service
 from app.core.user_data_service import user_data_service
+from app.services.user_profiling import user_profiling_service
+
 
 logger = logging.getLogger(__name__)
 
@@ -210,14 +213,55 @@ async def execute_radar_sync(user_id: str, radar_id: str):
                     "radar_id": radar_id
                 }
 
-                # Generate individual audio if requested
+                
+                # 1. Generate Recommendation Reason (User Profiling)
+                recommendation_reason = ""
+                try:
+                    reason = await user_profiling_service.generate_recommendation_reason(user_id, item_data)
+                    if reason:
+                        recommendation_reason = reason
+                        item_data["recommendation_reason"] = reason
+                        # also append to summary for visibility
+                        original_summary = item_data.get("summary", "")
+                        item_data["summary"] = f"**Why relevant to you:** {reason}\n\n{original_summary}"
+                except Exception as e:
+                    logger.warning(f"Failed to generate recommendation reason: {e}")
+
+                # 2. Generate individual audio if requested
                 if is_audio_podcast:
                     try:
-                        # Construct text for TTS (Title + Summary)
-                        tts_text = f"Title: {paper.get('title')}. Summary: {paper.get('summary')}"
+                        # Construct text for TTS (Title + Reason + Summary)
+                        tts_text = f"Title: {paper.get('title')}. "
+                        
+                        if recommendation_reason:
+                             tts_text += f"Reason for recommendation: {recommendation_reason}. "
+                        
+                        tts_text += f"Summary: {paper.get('summary')}"
+                        
                         # Truncate to reasonable length for TTS
                         if len(tts_text) > 2000:
-                            tts_text = tts_text[:2000] + "..."
+                            # Try validation or auto-summary first if text is huge
+                            try:
+                                if user_profiling_service.client:
+                                    logger.info(f"Summarizing long text for TTS ({len(tts_text)} chars)")
+                                    summary_prompt = f"""Summarize the following research paper abstract for an audio brief. 
+                                    Keep the Title and 'Reason for Recommendation' intact if possible.
+                                    Target length: ~150 words.
+                                    
+                                    TEXT:
+                                    {tts_text}
+                                    """
+                                    resp = await user_profiling_service.client.aio.models.generate_content(
+                                        model="gemini-2.5-flash", 
+                                        contents=summary_prompt,
+                                        config=types.GenerateContentConfig(temperature=0.5)
+                                    )
+                                    tts_text = resp.text
+                                else:
+                                     tts_text = tts_text[:2000] + "..."
+                            except Exception as sum_err:
+                                logger.warning(f"TTS summarization failed, falling back to truncate: {sum_err}")
+                                tts_text = tts_text[:2000] + "..."
                         
                         audio_path = await loop.run_in_executor(None, _generate_audio_sync, tts_text)
                         
@@ -369,9 +413,16 @@ async def check_all_radars():
                             should_run = True # safer to run if date is bad
 
                     if should_run:
-                        logger.info(f"Triggering scheduled sync for radar {radar_id} ({freq})")
-                        # Fire and forget
-                        asyncio.create_task(execute_radar_sync(user_id, radar_id))
+                        # Add jitter to prevent thundering herd when many radars trigger at once
+                        # We schedule the task to run after a small random delay
+                        delay_seconds = random.randint(1, 60)
+                        logger.info(f"Scheduling sync for radar {radar_id} ({freq}) with {delay_seconds}s delay")
+                        
+                        async def _delayed_execution(uid, rid, delay):
+                            await asyncio.sleep(delay)
+                            await execute_radar_sync(uid, rid)
+                            
+                        asyncio.create_task(_delayed_execution(user_id, radar_id, delay_seconds))
             except Exception as ue:
                 logger.error(f"Error checking radars for user {user_id}: {ue}")
 

@@ -6,6 +6,7 @@ from app.core.schemas import Radar, RadarCreate, RadarUpdate
 from app.core.auth import get_current_user
 from app.core.user_data_service import user_data_service
 from app.services.scheduler import execute_radar_sync
+from app.services.user_profiling import user_profiling_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -24,6 +25,14 @@ async def create_radar(radar: RadarCreate, user_id: str = Depends(get_current_us
         
         # Add to Firestore
         update_time, doc_ref = await user_data_service.add_radar_item(user_id, data)
+        
+        # Log Activity
+        await user_profiling_service.log_activity(
+            user_id, 
+            "create_radar", 
+            {"radar_id": doc_ref.id, "title": radar.title}
+        )
+        
         return {"id": doc_ref.id, "message": "Radar created successfully"}
     except HTTPException:
         raise
@@ -65,6 +74,13 @@ async def get_radar_briefing(radar_id: Optional[str] = None, user_id: str = Depe
 
             # Track view immediately
             await user_data_service.track_radar_viewed(user_id, radar_id)
+            
+            # Log Activity
+            await user_profiling_service.log_activity(
+                user_id,
+                "view_radar",
+                {"radar_id": radar_id, "title": name}
+            )
 
             # Scenario 1: No parse ever happened
             if not last_updated:
@@ -149,6 +165,13 @@ async def delete_radar(radar_id: str, user_id: str = Depends(get_current_user)):
     logger.info(f"Deleting radar {radar_id} for user {user_id}")
     try:
         await user_data_service.delete_radar_item(user_id, radar_id)
+        
+        await user_profiling_service.log_activity(
+            user_id,
+            "delete_radar",
+            {"radar_id": radar_id}
+        )
+        
         return {"message": "Radar deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting radar: {e}")

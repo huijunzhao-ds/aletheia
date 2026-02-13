@@ -85,7 +85,8 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
     else:
          page_size = 100
 
-    client = arxiv.Client(page_size=page_size, delay_seconds=3.0, num_retries=3)
+    # Use slightly higher delay in client config, though our global lock handles the primary delay.
+    client = arxiv.Client(page_size=page_size, delay_seconds=5.0, num_retries=5)
 
     final_query = query.strip() if query else ""
     if published_after:
@@ -111,8 +112,10 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
     with _ARXIV_LOCK:
         # Enforce 3.0s delay since last call
         elapsed = time.time() - _LAST_ARXIV_CALL
-        if elapsed < 3.0:
-            time.sleep(3.0 - elapsed)
+        if elapsed < 4.5:
+            delay = 4.5 - elapsed
+            logger.info(f"ArXiv rate limit enforcement: Sleeping for {delay:.2f}s")
+            time.sleep(delay)
             
         try:
             for attempt in range(max_retries):

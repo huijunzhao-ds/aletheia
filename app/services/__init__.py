@@ -18,3 +18,5 @@ from .file_ops import read_local_file
 # Add existing services
 from .scheduler import execute_radar_sync
 from .title_generator import generate_smart_title
+from .user_profiling import get_research_persona, update_research_persona
+
