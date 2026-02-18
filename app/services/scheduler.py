@@ -379,7 +379,9 @@ async def check_all_radars():
     logger.info("Running scheduled radar check...")
     try:
         all_user_ids = await user_data_service.get_all_users()
+        tasks_to_run = []
         
+        # 1. Collect all radars that need updating
         for user_id in all_user_ids:
             try:
                 radars = await user_data_service.get_radar_items(user_id)
@@ -395,12 +397,9 @@ async def check_all_radars():
                     now = datetime.datetime.now(datetime.timezone.utc)
                     
                     if not last_updated_str or last_updated_str in ["Never", "Just updated"]:
-                        # "Just updated" usually means created but not yet synced, or user manually triggered.
-                        # If "Never", definitely run.
                         should_run = last_updated_str == "Never"
                     else:
                         try:
-                            # Format: "%Y-%m-%d %H:%M"
                             last_updated = datetime.datetime.strptime(last_updated_str, "%Y-%m-%d %H:%M").replace(tzinfo=datetime.timezone.utc)
                             delta = now - last_updated
                             
@@ -410,22 +409,31 @@ async def check_all_radars():
                             elif freq == 'Monthly' and delta > datetime.timedelta(days=30): should_run = True
                         except Exception as e:
                             logger.warning(f"Error parsing date for radar {radar_id}: {e}")
-                            should_run = True # safer to run if date is bad
+                            should_run = True 
 
                     if should_run:
-                        # Add jitter to prevent thundering herd when many radars trigger at once
-                        # We schedule the task to run after a small random delay
-                        delay_seconds = random.randint(1, 60)
-                        logger.info(f"Scheduling sync for radar {radar_id} ({freq}) with {delay_seconds}s delay")
-                        
-                        async def _delayed_execution(uid, rid, delay):
-                            await asyncio.sleep(delay)
-                            await execute_radar_sync(uid, rid)
-                            
-                        asyncio.create_task(_delayed_execution(user_id, radar_id, delay_seconds))
+                        tasks_to_run.append((user_id, radar_id, freq))
             except Exception as ue:
                 logger.error(f"Error checking radars for user {user_id}: {ue}")
 
+        # 2. Execute sequentially to avoid rate limits
+        if tasks_to_run:
+            logger.info(f"Found {len(tasks_to_run)} radars to sync. executing sequentially...")
+            # Shuffle to avoid same-user bias every run
+            random.shuffle(tasks_to_run)
+            
+            for uid, rid, freq in tasks_to_run:
+                try:
+                    logger.info(f"Sequential Sync: Starting radar {rid} ({freq})")
+                    await execute_radar_sync(uid, rid)
+                    # Force a sleep between radars to satisfy ArXiv policy (and general load)
+                    # Using 5 seconds to be safe
+                    await asyncio.sleep(5) 
+                except Exception as e:
+                     logger.error(f"Error syncing radar {rid}: {e}")
+        else:
+            logger.info("No radars due for sync.")
+            
     except Exception as e:
         logger.error(f"Scheduled check failed: {e}")
 
