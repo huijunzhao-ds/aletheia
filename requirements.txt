@@ -16,3 +16,4 @@ pyjwt[crypto]
 apscheduler
 pypdf
 google-cloud-storage
+google-cloud-texttospeech

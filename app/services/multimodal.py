@@ -20,30 +20,59 @@ except ImportError:
 
 
 def generate_audio_file(text: str, schema: str = "en") -> str:
-    """Helper to generate an audio file from text using gTTS."""
+    """Helper to generate an audio file from text using Google Cloud Text-to-Speech."""
     try:
         os.makedirs(AUDIO_DIR, exist_ok=True)
         filename = f"{uuid.uuid4()}.mp3"
         filepath = os.path.join(AUDIO_DIR, filename)
+
+        from google.cloud import texttospeech
         
-        # Retry logic for gTTS
-        max_retries = 3
-        current_error = None
+        # Instantiate a client
+        client = texttospeech.TextToSpeechClient()
+
+        # Set the text input to be synthesized
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+
+        # Build the voice request, select the language code ("en-US") and the ssml
+        # voice gender ("neutral")
+        voice = texttospeech.VoiceSelectionParams(
+            language_code="en-US", 
+            ssml_gender=texttospeech.SsmlVoiceGender.NEUTRAL
+        )
+
+        # Select the type of audio file you want returned
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3
+        )
+
+        # Perform the text-to-speech request on the text input with the selected
+        # voice parameters and audio file type
+        response = client.synthesize_speech(
+            input=synthesis_input, voice=voice, audio_config=audio_config
+        )
+
+        # The response's audio_content is binary.
+        with open(filepath, "wb") as out:
+            out.write(response.audio_content)
+            
+        logger.info(f"Generated audio file (Official API): {filepath}")
+        return os.path.relpath(filepath, BASE_DIR)
         
-        for attempt in range(max_retries):
-            try:
-                # Use 'com' or 'us' explicitly
-                tts = gTTS(text=text, lang=schema, tld='us')
-                tts.save(filepath)
-                logger.info(f"Generated audio file: {filepath}")
-                return os.path.relpath(filepath, BASE_DIR)
-            except Exception as e:
-                current_error = e
-                logger.warning(f"gTTS attempt {attempt+1} failed: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
-                    
-        raise current_error
+    except Exception as e:
+        logger.error(f"Error generating audio with Google Cloud TTS: {e}")
+        # Fallback to gTTS if official client fails (e.g. auth issues locally)? 
+        # For now, let's stick to fail-loud or maybe keep gTTS as fallback?
+        # Let's keep a tiny fallback just in case auth is missing locally.
+        try:
+             logger.warning("Falling back to gTTS due to Cloud API error...")
+             from gtts import gTTS
+             tts = gTTS(text=text, lang="en")
+             tts.save(filepath)
+             return os.path.relpath(filepath, BASE_DIR)
+        except Exception as e2:
+             logger.error(f"Fallback gTTS also failed: {e2}")
+             raise e
     except Exception as e:
         logger.error(f"Error generating audio: {e}")
         raise
