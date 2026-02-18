@@ -108,8 +108,8 @@ Aletheia uses a **multi-agent orchestration** pattern powered by Google's ADK an
 - [x] Deploy to GCP Cloud Run using GitHub Actions CI/CD
 - [x] Add user login and authentication 
 - [x] Implement radar and exploration features
-- [ ] Enhance radar search and ranking
-- [ ] Enhance exploration chat context management
+- [x] Enhance radar search and ranking
+- [ ] Enhance radar and exploration chat context management (WIP)
 - [ ] Implement projects features 
 - [ ] Add a user help agent
 - [ ] Add presentation features

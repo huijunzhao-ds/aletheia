@@ -132,18 +132,24 @@ class UserDataService:
         await doc_ref.delete()
         return True
 
-    async def get_all_radar_captured_keys(self, user_id: str, radar_id: str):
+    async def get_all_radar_captured_keys(self, user_id: str, radar_id: str, since: datetime.datetime = None):
         """
-        Efficiently retrieves only source_url and title of all captured items for deduplication.
-        Returns a list of dicts with 'source_url' and 'title'.
+        Efficiently retrieves only url and title of captured items for deduplication.
+        Optionally filters by timestamp 'since' for optimization.
         """
         # Select only necessary fields to reduce cost/bandwidth
-        docs = self.get_radar_items_collection(user_id, radar_id).select(["source_url", "title"]).stream()
+        query = self.get_radar_items_collection(user_id, radar_id)
+        
+        if since:
+             # Ensure since is timezone aware if needed, firestore handles it
+             query = query.where(filter=firestore.FieldFilter("timestamp", ">=", since))
+             
+        docs = query.select(["url", "title"]).stream()
         results = []
         async for doc in docs:
             d = doc.to_dict()
             results.append({
-                "source_url": d.get("source_url"), 
+                "url": d.get("url"),
                 "title": d.get("title")
             })
         return results
@@ -186,6 +192,38 @@ class UserDataService:
             d["id"] = doc.id
             results.append(d)
         return results
+
+    # --- User Activity & Profiling ---
+    def get_activities_collection(self, user_id: str):
+        return self._get_user_ref(user_id).collection("activities")
+
+    async def add_user_activity(self, user_id: str, activity_data: Dict[str, Any]):
+        activity_data["timestamp"] = datetime.datetime.now(datetime.timezone.utc)
+        return await self.get_activities_collection(user_id).add(activity_data)
+
+    async def get_recent_user_activities(self, user_id: str, limit: int = 50):
+        docs = self.get_activities_collection(user_id).order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        results = []
+        async for doc in docs:
+            d = doc.to_dict()
+            results.append(d)
+        return results
+
+    async def save_user_profile(self, user_id: str, profile_text: str):
+        """Saves the AI-generated user research persona."""
+        if not self.db: return
+        await self._get_user_ref(user_id).set({
+            "research_persona": profile_text,
+            "persona_updated_at": datetime.datetime.now(datetime.timezone.utc)
+        }, merge=True)
+
+    async def get_user_profile(self, user_id: str) -> str:
+        if not self.db: return ""
+        doc = await self._get_user_ref(user_id).get()
+        if doc.exists:
+             return (doc.to_dict() or {}).get("research_persona", "")
+        return ""
+
 
 # Singleton instance
 user_data_service = UserDataService()

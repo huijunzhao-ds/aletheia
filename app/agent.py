@@ -14,7 +14,9 @@ from app.services import (
     get_radar_details,
     save_radar_item,
     list_exploration_items,
-    read_local_file
+    read_local_file,
+    get_research_persona,
+    update_research_persona
 )
 
 # Configure logging
@@ -133,6 +135,27 @@ project_agent = Agent(
     tools=[],
 )
 
+# 8. User Insight Specialist
+user_insight_agent = Agent(
+    name="user_insight_specialist",
+    model=Gemini(model="gemini-2.5-flash", api_key=api_key),
+    instruction="""You are a User Insight Analyst.
+    Your goal is to understand and summarize the user's research interests, behaviors, and preferences.
+    
+    TOOLS:
+    - `get_research_persona`: Retrieves the current user's structured "Research Persona".
+    - `update_research_persona`: Forces a re-analysis of recent activities and chat history to update and return a new profile.
+    
+    WHEN TO USE:
+    1. **Profile Queries**: "What are my interests?", "What do you know about me?", "Summarize my style." -> Call `get_research_persona`.
+    2. **Explanation**: "Why did you recommend this paper?", "Why is this relevant?" -> Retrieve the persona to provide a personalized answer.
+    3. **Updates/Corrections**: "I'm interested in biology now", "Stop showing me crypto." -> Call `update_research_persona` to refresh the profile with this new context.
+    
+    Your responses should be insightful, helping the user understand their own research habits or the system's logic.
+    """,
+    tools=[get_research_persona, update_research_persona],
+)
+
 # Root Router Agent
 root_agent = Agent(
     name="aletheia_router",
@@ -145,15 +168,18 @@ root_agent = Agent(
     2. `exploration_specialist`: Use this for general browsing, discovery, and surface-level research.
     3. `search_specialist`: Use this for "Deep Research" requests that require intense, multi-source investigation.
     4. `project_specialist`: Use this for managing research artifacts, files, and project organization.
+    5. `user_insight_specialist`: Use this if the user asks about their own valid research profile or preferences.
     
     DELEGATION STRATEGY:
     - If the user is in the 'Radar' view (CONTEXT) or asks about radars -> Delegate to `research_radar_specialist`.
     - If the user asks for a "Deep Search" or detailed technical investigation -> `search_specialist`.
+    - If the user asks about their own activities, profile, preferences, or why certain content is recommended -> Delegate to `user_insight_specialist`.
+      - Examples: "What are my interests?", "Summarize my research style", "Why did you show me this?", "Update my preferences".
     - Format conversion (Audio, PPT, Video): After a specialist provides research information, you may further delegate to `audio_specialist`, `presentation_specialist`, or `video_specialist` if the user's radar settings or message specify those formats.
     
     Always provide a helpful and encouraging final response, ensuring links to any generated files are included.
     """,
-    sub_agents=[research_radar_agent, exploration_agent, search_agent, project_agent, audio_agent, presentation_agent, video_agent],
+    sub_agents=[research_radar_agent, exploration_agent, search_agent, project_agent, audio_agent, presentation_agent, video_agent, user_insight_agent],
 )
 
 app = App(root_agent=root_agent, name="Aletheia")
