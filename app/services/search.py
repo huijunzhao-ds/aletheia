@@ -86,7 +86,8 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
          page_size = 100
 
     # Use slightly higher delay in client config, though our global lock handles the primary delay.
-    client = arxiv.Client(page_size=page_size, delay_seconds=5.0, num_retries=5)
+    # Use conservative delay settings. We rely on our outer loop for robust backoff.
+    client = arxiv.Client(page_size=page_size, delay_seconds=10.0, num_retries=1)
 
     final_query = query.strip() if query else ""
     if published_after:
@@ -149,10 +150,12 @@ def search_arxiv(query: str, max_results: int = 5, published_after: Optional[dat
                     return results
                         
                 except Exception as e:
-                    is_rate_limit = "429" in str(e)
+                    error_str = str(e)
+                    is_rate_limit = "429" in error_str or "503" in error_str
+                    
                     if is_rate_limit and attempt < max_retries - 1:
-                        wait_seconds = 5 * (2 ** attempt) # 5, 10, 20...
-                        logger.warning(f"ArXiv 429 rate limit. Retrying in {wait_seconds}s... (Attempt {attempt+1}/{max_retries})")
+                        wait_seconds = 10 * (2 ** attempt) # 10, 20, 40...
+                        logger.warning(f"ArXiv service unavailable (429/503). Retrying in {wait_seconds}s... (Attempt {attempt+1}/{max_retries})")
                         time.sleep(wait_seconds)
                         continue
                     
