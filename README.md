@@ -112,8 +112,7 @@ Aletheia uses a **multi-agent orchestration** pattern powered by Google's ADK an
 - [ ] Enhance radar and exploration chat context management (WIP)
 - [ ] Implement projects features 
 - [ ] Add a user help agent
-- [ ] Add presentation features
-- [ ] Add video features
+- [ ] Enhance multimedia generation
 - [ ] Add personal knowledge and information sources
 - [ ] Add memory management and personalization
 - [ ] Add social and share features
