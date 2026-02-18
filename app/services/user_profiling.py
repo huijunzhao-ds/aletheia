@@ -155,7 +155,7 @@ class UserProfilingService:
         except Exception as e:
             logger.error(f"Failed to update user persona: {e}")
 
-    async def generate_recommendation_reason(self, user_id: str, paper_entry: dict) -> str:
+    async def _generate_recommendation_reason(self, user_id: str, paper_entry: dict) -> str:
         """
         Generates a 1-2 sentence reason for recommending a paper based on user profile.
         """
@@ -165,11 +165,9 @@ class UserProfilingService:
         try:
             # 1. Get User Profile
             profile = await user_data_service.get_user_profile(user_id)
+            
             if not profile:
-                # Try to generate one on the fly if enough data
-                profile = await self.update_user_persona(user_id)
-                
-            if not profile:
+                # Fallback without triggering expensive/race-prone update in hot loop
                 return "Recommended based on your radar settings."
 
             # 2. Get Recent Chat Context (Real-time interests)
@@ -200,14 +198,18 @@ class UserProfilingService:
             response = await self.client.aio.models.generate_content(
                 model="gemini-2.5-flash", 
                 contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.7)
+                config=types.GenerateContentConfig(temperature=0.7, tools=None)
             )
             
             return response.text.strip()
 
         except Exception as e:
             logger.error(f"Failed to generate recommendation reason: {e}")
-            return ""
+    async def generate_recommendation_reason(self, user_id: str, paper_entry: dict) -> str:
+        """
+        Public wrapper for generating recommendation reasons.
+        """
+        return await self._generate_recommendation_reason(user_id, paper_entry)
 
 # Singleton
 user_profiling_service = UserProfilingService()

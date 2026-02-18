@@ -281,8 +281,14 @@ async def execute_radar_sync(user_id: str, radar_id: str):
                 logger.error(f"Failed to process paper {paper.get('title')}: {e}")
                 return False
 
-        # Execute all tasks concurrently
-        tasks = [_process_and_save_paper(p) for p in real_papers]
+        # Execute tasks with concurrency limit
+        sem = asyncio.Semaphore(4)
+
+        async def _bounded_process(p):
+            async with sem:
+                return await _process_and_save_paper(p)
+
+        tasks = [_bounded_process(p) for p in real_papers]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         # Count successes
