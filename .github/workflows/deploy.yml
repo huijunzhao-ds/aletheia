@@ -65,6 +65,10 @@ jobs:
           FIREBASE_DATABASE_ID=qa-research-db
           VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           GCS_BUCKET_NAME=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+        flags: |-
+          --execution-environment=gen2
+          --add-volume=name=static-volume,type=cloud-storage,bucket=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          --add-volume-mount=volume=static-volume,mount-path=/app/static
 
   # Job for Production Environment
   deploy-prod:
@@ -117,3 +121,7 @@ jobs:
           FIREBASE_DATABASE_ID=prod-research-db
           VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           GCS_BUCKET_NAME=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+        flags: |-
+          --execution-environment=gen2
+          --add-volume=name=static-volume,type=cloud-storage,bucket=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          --add-volume-mount=volume=static-volume,mount-path=/app/static
