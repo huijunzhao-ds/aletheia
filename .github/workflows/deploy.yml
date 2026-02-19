@@ -38,7 +38,7 @@ jobs:
       run: |-
         # Use Artifact Registry format: us-central1-docker.pkg.dev/PROJECT_ID/REPOSITORY/IMAGE:TAG
         # Assuming a repository named 'aletheia' exists in Artifact Registry
-        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/aletheia:qa-${{ github.sha }}"
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/aletheia/app:qa-${{ github.sha }}"
         
         docker build -t $IMAGE_TAG \
           --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
@@ -90,7 +90,7 @@ jobs:
 
     - name: Build and Push Container
       run: |-
-        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/aletheia:prod-${{ github.sha }}"
+        IMAGE_TAG="us-central1-docker.pkg.dev/${{ steps.auth.outputs.project_id }}/aletheia/app:prod-${{ github.sha }}"
         
         docker build -t $IMAGE_TAG \
           --build-arg VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }} \
