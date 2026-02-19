@@ -114,5 +114,4 @@ Aletheia uses a **multi-agent orchestration** pattern powered by Google's ADK an
 - [ ] Add a user help agent
 - [ ] Enhance multimedia generation
 - [ ] Add personal knowledge and information sources
-- [ ] Add memory management and personalization
 - [ ] Add social and share features
