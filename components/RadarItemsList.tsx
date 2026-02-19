@@ -85,10 +85,14 @@ export const RadarItemsList: React.FC<RadarItemsListProps> = ({
     }
 
     const getRelativeTime = (timestamp: string) => {
+        if (!timestamp) return 'Recently';
         try {
             const date = new Date(timestamp);
+            if (isNaN(date.getTime())) return 'Recently'; // Check for invalid date
+
             const now = new Date();
             const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60));
+
             if (diffInHours < 1) return 'Just now';
             if (diffInHours < 24) return `${diffInHours} hours ago`;
             return `${Math.floor(diffInHours / 24)} days ago`;
