@@ -61,7 +61,7 @@ Open the URL shown in the terminal (usually `http://localhost:3000`) to interact
 
 Aletheia is configured for deployment to **Google Cloud Run** and **Firebase** using **GitHub Actions**. 
 
-The latest prod version is deployed to `https://aletheia-635800011324.us-central1.run.app/`, with the code in main branch.
+The latest prod version is deployed to `https://aletheia-prod-635800011324.us-central1.run.app`, with the code in main branch.
 
 The latest QA version is deployed to `https://aletheia-qa-635800011324.us-central1.run.app/`, with the code in develop branch.
 

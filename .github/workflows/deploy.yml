@@ -69,6 +69,8 @@ jobs:
           --execution-environment=gen2
           --add-volume=name=static-volume,type=cloud-storage,bucket=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           --add-volume-mount=volume=static-volume,mount-path=/app/static
+          --min-instances=1
+          --no-cpu-throttling
 
   # Job for Production Environment
   deploy-prod:
@@ -125,3 +127,5 @@ jobs:
           --execution-environment=gen2
           --add-volume=name=static-volume,type=cloud-storage,bucket=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           --add-volume-mount=volume=static-volume,mount-path=/app/static
+          --min-instances=1
+          --no-cpu-throttling
